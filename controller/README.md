@@ -110,6 +110,25 @@ server_app_loop() [every 1 ms alongside pump_loop]
 | Cancel queued | `CANCEL_QUEUE,<slot>` | Drops that slot's pending queue only |
 | Water level | `WTRLVL,<v1>..<v6>` | Sets the per-slot empty flag. Which level means empty is set by `WATER_SENSOR_EMPTY_HIGH`; a legacy 4-value form is still accepted |
 | Status poll | `STATUS` | Returns the 34-field `STATUS,...` line (5 x TOTAL_SLOTS + 4) |
+| Start a pour | `DISPENSE,<slot>` | Consumes one armed unit and starts or extends that slot's pour - what one button press does. Answers `DISPENSE_ACK,<slot>,<ok\|no_credit\|empty\|max_active\|priming\|machine_paused\|slot_paused\|cooldown\|invalid_slot>` |
+| Hold a pour | `PAUSE,<slot>` | Switches the pump off but keeps the pour open, freezing its countdown. Answers `PAUSE_ACK,<slot>,<ok\|not_pouring\|already_paused\|invalid_slot>` |
+| Continue a pour | `RESUME,<slot>` | Continues from exactly the remainder the pour had when it stopped. Answers `RESUME_ACK,<slot>,<ok\|not_paused\|invalid_slot>` |
+
+`DISPENSE`, `PAUSE` and `RESUME` exist for the kiosk, which has no buttons.
+Physical button handling is unchanged and still present, so one firmware serves
+both products.
+
+Two refusals are easy to confuse and are deliberately separate tokens:
+`machine_paused` is the machine-wide `paused` flag that staff control, while
+`slot_paused` is that slot's own pour being held by the customer. A `DISPENSE`
+on a paused slot is refused rather than treated as a resume - a client that has
+lost track of the slot would otherwise restart a pour under someone who is not
+holding their bottle under the nozzle.
+
+A pour left paused longer than `PAUSE_MAX_S` (total across every pause, not per
+pause) is ended the same way a tank running dry ends one: full price for every
+press consumed, a row in `INTERRUPTED_LOG` with `reason: "pause_timeout"`, and
+presses never started left as credit.
 
 All commands are validated (comma count checked) before parsing; malformed messages are logged and dropped.
 
@@ -279,7 +298,8 @@ A non-zero exit code means at least one test failed.
 | `phase8` | `test_config_loading.cpp` | `durationSeconds` field, `serverPort`/`transactionDir` defaults, no debug stdout |
 | `phase9` | `test_armed_state.cpp` | Per-slot armed state, pending queue FIFO order |
 | `phase10` | `test_logging.cpp` | `log_info`/`log_error` stream routing, module tag format, timestamp structure |
-| `socket_integration` | `test_socket_integration.cpp` | Full TCP server integration: 18 end-to-end cases |
+| `dispense_commands` | `test_dispense_commands.cpp` | `DISPENSE`/`PAUSE`/`RESUME`: the countdown freezing while paused, the pause limit, and a paused pour never being refunded |
+| `socket_integration` | `test_socket_integration.cpp` | Full TCP server integration: 18 end-to-end cases, plus the dispense command acks |
 
 ### Clean build artifacts
 

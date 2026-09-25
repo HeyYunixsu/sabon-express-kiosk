@@ -61,6 +61,64 @@ const char *prime_result_text(PrimeResult r);
 double pump_prime_seconds();
 
 // ---------------------------------------------------------------------------
+// Dispense / pause / resume
+//
+// A kiosk has no buttons. ARM grants presses, but only a button press turned a
+// granted press into a pour, so these three commands do over TCP what a finger
+// did at the panel. Physical buttons keep working untouched -- one firmware
+// serves both the kiosk and the cashier machines.
+//
+// Pause exists because the customer holds their own bottle: they need to stop
+// mid-pour without losing what they paid for. See
+// docs/superpowers/specs/2026-09-25-controller-dispense-commands-design.md
+// ---------------------------------------------------------------------------
+enum class DispenseResult {
+    OK,
+    SLOT_INVALID,
+    NO_CREDIT,
+    SLOT_EMPTY,
+    MAX_ACTIVE,      // two pumps already running -- the power rail limit
+    PRIMING,         // a maintenance burst owns this slot
+    MACHINE_PAUSED,  // state.paused -- the whole machine is held
+    SLOT_PAUSED,     // this pour is paused; the caller wants RESUME, not DISPENSE
+    COOLDOWN         // another pump started moments ago; the press is NOT consumed
+};
+
+// Consume one armed unit on `slot` and start or extend its pour. One unit per
+// call, exactly as one button press does.
+DispenseResult pump_dispense(AppState &state, int slot);
+
+enum class PauseResult {
+    OK,
+    SLOT_INVALID,
+    NOT_POURING,     // nothing in flight to pause (a prime is not a pour)
+    ALREADY_PAUSED
+};
+
+// Switch the pump off but keep the pour open, freezing its countdown so the
+// paid-for measure is not burned while nothing is coming out.
+PauseResult pump_pause(AppState &state, int slot);
+
+enum class ResumeResult {
+    OK,
+    SLOT_INVALID,
+    NOT_PAUSED
+};
+
+// Continue a paused pour from exactly the remainder it had when it stopped.
+ResumeResult pump_resume(AppState &state, int slot);
+
+const char *dispense_result_text(DispenseResult r);
+const char *pause_result_text(PauseResult r);
+const char *resume_result_text(ResumeResult r);
+
+// Parses PAUSE_MAX_S and clamps it to 15..600. Returns 120 for anything
+// unparseable. Below 15s a customer cannot swap a bottle; above 600s the
+// nozzle is not meaningfully bounded. Exposed so the clamp can be tested
+// without a config.env on disk, as clamp_arm_timeout is.
+int clamp_pause_max(const std::string &raw);
+
+// ---------------------------------------------------------------------------
 // Prices
 //
 // Set per client from the dashboard rather than compiled in. A change alters

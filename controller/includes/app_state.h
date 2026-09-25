@@ -69,6 +69,14 @@ struct AppState {
     // the owner's call, 2026-09-04: long enough to fill several containers.
     int armTimeoutSeconds = 300;
 
+    // How long a customer may hold a pour paused, totalled across every pause
+    // in that pour rather than reset on each resume -- otherwise tapping
+    // resume every two minutes holds the nozzle indefinitely and the limit is
+    // cosmetic. A pour past it is ended and recorded; see pump_control.cpp.
+    // Lives here rather than in a module static so a test can shorten it
+    // without waiting the real two minutes.
+    int pauseMaxSeconds = 120;
+
     long long remainingTime[TOTAL_SLOTS + 1] = {0};  // index 1-6
     // true = that slot's tank is empty, which blocks arming and stops a
     // running pump. Set from WTRLVL; which GPIO level counts as empty is

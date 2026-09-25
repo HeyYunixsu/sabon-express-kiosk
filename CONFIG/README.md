@@ -147,6 +147,16 @@ quietly.
 | `PRIME_SECONDS` | `3` | Length of one prime burst, in seconds. Clamped to `0.5`-`15` by the controller, because an over-long burst empties a gallon onto the floor with nobody at the machine |
 | `PRIME_LOG` | `<repo>/logs/prime_events.jsonl` | Where prime events are appended, one JSON object per line. **Must stay outside `TRANSACTION_DIR`** - the uploader treats every file in there as a sale to POST to the cloud |
 | `ARM_TIMEOUT_SECONDS` | `300` | How long an armed slot's button stays live before its credits are written off. Clamped to `30`-`1800` seconds by the controller - the button is physically live for the whole window, so raise it only as far as the counter actually needs |
+| `PAUSE_MAX_S` | `120` | How long a customer may hold a pour paused before it is ended and recorded. Clamped to `15`-`600`. Kiosk only - nothing sends `PAUSE` on a machine with physical buttons |
+
+`PAUSE_MAX_S` is totalled across every pause in a pour rather than reset on
+each resume. Reset per pause, a customer tapping resume every two minutes holds
+the nozzle indefinitely and the limit is decorative. A pour ended at the limit
+charges full price for every press already consumed - that is what the customer
+was charged, the same reasoning as a tank running dry - and leaves presses that
+were never started as credit. The event is appended to `INTERRUPTED_LOG` with
+`reason: "pause_timeout"`, so staff can tell it apart from `tank_empty` and
+settle the short pour.
 
 Priming clears air from a hose after a gallon change, so the next customer is
 not charged for a press that dispenses air. A prime moves product and records

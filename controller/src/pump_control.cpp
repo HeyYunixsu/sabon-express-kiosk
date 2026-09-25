@@ -47,7 +47,16 @@ struct PumpState {
     // rather than divided out of a total afterwards because prices are
     // editable mid-pour, so the presses are not always worth the same.
     std::vector<double> pressAmounts;
+    // Pour remainder in ms at the moment of pause. Both remainders are stored
+    // and then rewritten onto the deadlines each tick while paused, rather
+    // than decremented, so an hour-long pause accumulates no drift.
     long long remainingTimeWhenPaused = 0;
+    long long postPressRemainingWhenPaused = 0;
+    // Total paused time for THIS pour, summed across every pause. Per-pause
+    // would reset on each resume, and a customer tapping resume every two
+    // minutes would hold the nozzle forever.
+    long long pausedTotalMs = 0;
+    std::chrono::time_point<std::chrono::steady_clock> pauseStartedAt{};
     std::chrono::time_point<std::chrono::steady_clock> timer{};
     bool buttonWasPressedLastFrame = false;
     // When the current press began: the first raw LOW reading, not the moment
@@ -81,11 +90,15 @@ static std::chrono::time_point<std::chrono::steady_clock> g_last_pump_start =
 // set only by pump_setup(), so pump_loop(state) silently ignored its own
 // argument and wrote through whatever was last registered -- identical in
 // production, a dangling pointer anywhere else.
-// Returns false ONLY when the press was refused by the start cooldown, so the
-// caller can hold on to it and try again. Every other outcome -- accepted, or
-// denied for no credit, an empty slot, a pause -- returns true and consumes
-// the press, as V1 did.
-static bool executeDispenseTrigger(AppState &state, int pumpIdx) {
+// Returns COOLDOWN ONLY when the press was refused by the start cooldown, so
+// the caller can hold on to it and try again. Every other outcome -- accepted,
+// or denied for no credit, an empty slot, a pause -- consumes the press, as V1
+// did. Callers that only care whether to keep the press test against COOLDOWN.
+//
+// It returns a result rather than a bool because the kiosk has to tell a
+// customer WHY nothing happened. The reasons were already worked out here for
+// the log line below and then thrown away; this hands them back instead.
+static DispenseResult executeDispenseTrigger(AppState &state, int pumpIdx) {
     auto current_time = std::chrono::steady_clock::now();
 
     if (std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -96,7 +109,7 @@ static bool executeDispenseTrigger(AppState &state, int pumpIdx) {
         log_info("pump", "Slot " + std::to_string(pumpIdx) + ": DENIED  reason=cooldown"
                   "  (another pump started under "
                   + std::to_string(g_pump_start_cooldown_ms) + "ms ago)");
-        return false;
+        return DispenseResult::COOLDOWN;
     }
 
     PumpState  &pump    = pumps[pumpIdx];
@@ -148,20 +161,39 @@ static bool executeDispenseTrigger(AppState &state, int pumpIdx) {
                   "  armedQty=" + std::to_string(state.armedQty[pumpIdx])
                   + "  reserved=" + std::to_string(pump.armedUnitsReserved)
                   + "  run_ms=" + std::to_string(ms));
-    } else {
-        std::string reason = isMachinePaused ? "paused" :
-                             isSlotEmpty     ? "empty" :
-                             pump.isPriming  ? "priming" :
-                             (atleast2PumpOn && !pumpAlreadyOn) ? "max_active" :
-                             "no_credit";
-        log_info("pump", "Slot " + std::to_string(pumpIdx) + ": DENIED  reason=" + reason
-                  + "  armedQty=" + std::to_string(state.armedQty[pumpIdx]));
+        return DispenseResult::OK;
     }
-    return true;
+
+    DispenseResult refusal =
+        isMachinePaused ? DispenseResult::MACHINE_PAUSED :
+        isSlotEmpty     ? DispenseResult::SLOT_EMPTY     :
+        pump.isPriming  ? DispenseResult::PRIMING        :
+        (atleast2PumpOn && !pumpAlreadyOn) ? DispenseResult::MAX_ACTIVE :
+        DispenseResult::NO_CREDIT;
+    log_info("pump", "Slot " + std::to_string(pumpIdx) + ": DENIED  reason="
+              + dispense_result_text(refusal)
+              + "  armedQty=" + std::to_string(state.armedQty[pumpIdx]));
+    return refusal;
 }
 
 // Defined below, beside the prime record it mirrors.
-static void appendInterruptedLog(AppState &state, int slot, double amount);
+static void appendInterruptedLog(AppState &state, int slot, double amount,
+                                 const std::string &reason);
+
+// Defined below, beside the commands that made the distinction necessary.
+static bool pourIsOpen(const PumpState &pump);
+
+// A pour that closes for any reason -- finished, dry tank, jam refund, pause
+// timeout -- must not leave pause bookkeeping behind. The next pour on this
+// slot would start with its limit part-used and its deadlines frozen at stale
+// remainders.
+static void clearPauseState(PumpState &pump)
+{
+    pump.isPaused                     = false;
+    pump.pausedTotalMs                = 0;
+    pump.remainingTimeWhenPaused      = 0;
+    pump.postPressRemainingWhenPaused = 0;
+}
 
 // A slot that stops being busy must take its next queued ARM with it.
 // ARM queues rather than arms while slotBusy is set, so any path that clears
@@ -195,7 +227,7 @@ static void handlePump(PumpState &pump, AppState &state) {
             pump.timer = std::chrono::steady_clock::now();
             if (releaseSlot(state, pump.id))
                 saveStateToDisk(state, state.transactionDir);
-        } else if (pump.isPumping) {
+        } else if (pourIsOpen(pump)) {
             // The tank ran dry part-way through a customer's pour. Closing the
             // dispense here rather than just switching the relay off: leaving
             // it open recorded no sale at all, held the slot busy until a
@@ -218,7 +250,7 @@ static void handlePump(PumpState &pump, AppState &state) {
             int postfix = 0;
             for (double pressAmount : pump.pressAmounts)
                 writeTransaction(state, pump.id, pressAmount, "", postfix++);
-            appendInterruptedLog(state, pump.id, pump.amount);
+            appendInterruptedLog(state, pump.id, pump.amount, "tank_empty");
 
             pump.pressAmounts.clear();
             pump.amount = 0;
@@ -228,6 +260,7 @@ static void handlePump(PumpState &pump, AppState &state) {
             // down when the tank is refilled, and the completion branch books
             // the same sale a second time.
             pump.timer = std::chrono::steady_clock::now();
+            clearPauseState(pump);
             releaseSlot(state, pump.id);
             saveStateToDisk(state, state.transactionDir);
         }
@@ -253,7 +286,7 @@ static void handlePump(PumpState &pump, AppState &state) {
             pump.amount = 0;
             if (releaseSlot(state, pump.id))
                 saveStateToDisk(state, state.transactionDir);
-        } else if (pump.isPumping) {
+        } else if (pourIsOpen(pump)) {
             log_info("pump", "Pump " + std::to_string(pump.id) + ": DONE  amount="
                       + std::to_string(pump.amount));
             // One transaction per press. Presses extend a single pour, so
@@ -275,6 +308,7 @@ static void handlePump(PumpState &pump, AppState &state) {
             pump.amount = 0;
             pump.isPumping = false;
             pump.postPressDeadline = std::chrono::steady_clock::time_point{};
+            clearPauseState(pump);
             releaseSlot(state, pump.id);
 
             saveStateToDisk(state, state.transactionDir);
@@ -371,6 +405,8 @@ void pump_setup(AppState &state) {
     }
     if (config.count("ARM_TIMEOUT_SECONDS"))
         state.armTimeoutSeconds = clamp_arm_timeout(config["ARM_TIMEOUT_SECONDS"]);
+    if (config.count("PAUSE_MAX_S"))
+        state.pauseMaxSeconds = clamp_pause_max(config["PAUSE_MAX_S"]);
 
     // Prime events live outside transactionDir on purpose: the uploader sends
     // every file in that directory to the cloud as a sale.
@@ -550,7 +586,7 @@ void pump_loop(AppState &state) {
                     // flag first threw it away: the button is still down, so no
                     // new edge follows, and a customer holding through the
                     // cooldown got nothing until they let go and held again.
-                    if (executeDispenseTrigger(state, i))
+                    if (executeDispenseTrigger(state, i) != DispenseResult::COOLDOWN)
                         pumps[i].processingTrigger = false;
                 }
             }
@@ -628,6 +664,30 @@ void pump_loop(AppState &state) {
         }
     }
     delayMicroseconds(3000);  // 3ms rail settle after LED writes
+    // 2b. Hold the clock still for a paused pour.
+    //
+    // Every deadline on a pump is an absolute time compared against now, so a
+    // pause that did not touch them let the pour drain away with the relay off:
+    // remainingTime reached zero, and because the pause had cleared isPumping
+    // the completion branch did not fire, so the pour was abandoned with no
+    // sale written -- and the jam timeout then refunded the press. The customer
+    // kept what had poured and got their credit back.
+    //
+    // Rewriting the deadlines themselves, rather than correcting for an offset
+    // at each place they are read, keeps every other comparison against
+    // pump.timer honest for free: the activePumps rail count, pumpAlreadyOn,
+    // and the prime guard all still see a truthful absolute deadline.
+    //
+    // Written from a stored remainder rather than decremented, so a pause of
+    // any length accumulates no drift.
+    for (int i = 1; i <= TOTAL_SLOTS; i++) {
+        if (!pumps[i].isPaused) continue;
+        pumps[i].timer = current_time
+                       + std::chrono::milliseconds(pumps[i].remainingTimeWhenPaused);
+        pumps[i].postPressDeadline = current_time
+                       + std::chrono::milliseconds(pumps[i].postPressRemainingWhenPaused);
+    }
+
     // 3. Remaining times
     for (int i = 1; i <= TOTAL_SLOTS; i++) {
         auto diff = std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -638,6 +698,50 @@ void pump_loop(AppState &state) {
     // 4. Pump state machines
     for (int i = 1; i <= TOTAL_SLOTS; i++)
         handlePump(pumps[i], state);
+
+    // 4b. Pause timeout.
+    //
+    // A customer who walks away mid-pour must not hold a nozzle indefinitely,
+    // and must not be handed free product either. Ending the pour the same way
+    // a dry tank does: every consumed press recorded at full price -- that is
+    // what they were charged -- and surfaced for a person to settle. Presses
+    // never consumed were never taken out of armedQty, so they stay as credit
+    // with nothing extra to do.
+    //
+    // This is also what keeps a paused pour away from the jam refund below: the
+    // pour is closed here long before postPressDeadline could hand the press
+    // back as credit on top of the product that already poured.
+    for (int i = 1; i <= TOTAL_SLOTS; i++) {
+        PumpState &pump = pumps[i];
+        if (!pump.isPaused || !pourIsOpen(pump)) continue;
+
+        long long heldMs = pump.pausedTotalMs
+            + std::chrono::duration_cast<std::chrono::milliseconds>(
+                  current_time - pump.pauseStartedAt).count();
+        if (heldMs < (long long)state.pauseMaxSeconds * 1000) continue;
+
+        log_info("pump", "Pump " + std::to_string(i)
+                  + ": PAUSE TIMEOUT  held_ms=" + std::to_string(heldMs)
+                  + "  amount=" + std::to_string(pump.amount));
+
+        pump.armedUnitsReserved = 0;
+        int postfix = 0;
+        for (double pressAmount : pump.pressAmounts)
+            writeTransaction(state, i, pressAmount, "", postfix++);
+        appendInterruptedLog(state, i, pump.amount, "pause_timeout");
+
+        pump.pressAmounts.clear();
+        pump.amount = 0;
+        pump.isPumping = false;
+        clearPauseState(pump);
+        pump.postPressDeadline = std::chrono::steady_clock::time_point{};
+        // Zero the timer, as the dry-tank path does. Left running, the
+        // completion branch books the same presses a second time.
+        pump.timer = current_time;
+        digitalWrite(pin_pump[i], PUMP_TRIGGER_LOW);
+        releaseSlot(state, i);
+        saveStateToDisk(state, state.transactionDir);
+    }
 
     // 5. Jam timeout detection
     for (int i = 1; i <= TOTAL_SLOTS; i++) {
@@ -653,6 +757,7 @@ void pump_loop(AppState &state) {
             // Refunded, not sold -- these presses must not be written as
             // sales by whatever pour comes next on this slot.
             pumps[i].pressAmounts.clear();
+            clearPauseState(pumps[i]);
             state.slotBusy[i] = false;
             digitalWrite(pin_pump[i], PUMP_TRIGGER_LOW);
             saveStateToDisk(state, state.transactionDir);
@@ -688,13 +793,14 @@ static void appendPrimeLog(AppState &state, int slot, double seconds)
 // A sale that was charged in full but only partly delivered. Not revenue data
 // -- the transaction already carries that -- this exists so the event reaches
 // a person instead of only a log file nobody reads.
-static void appendInterruptedLog(AppState &state, int slot, double amount)
+static void appendInterruptedLog(AppState &state, int slot, double amount,
+                                 const std::string &reason)
 {
     std::ostringstream j;
     j << "{" << q("machine_id") << ":" << q(state.machineId)
       << "," << q("slot")       << ":" << q(std::to_string(slot))
       << "," << q("amount")     << ":" << amount
-      << "," << q("reason")     << ":" << q("tank_empty")
+      << "," << q("reason")     << ":" << q(reason)
       << "," << q("date_created") << ":" << q(format_current_time()) << "}";
     appendJsonLine(state.interruptedLogPath, j.str());
 }
@@ -784,6 +890,139 @@ int pump_get_price(int slot)
 {
     if (slot < 1 || slot > TOTAL_SLOTS) return 0;
     return productMap[slot].coins;
+}
+
+// ---------------------------------------------------------------------------
+// Dispense / pause / resume
+// ---------------------------------------------------------------------------
+const char *dispense_result_text(DispenseResult r)
+{
+    switch (r) {
+        case DispenseResult::OK:             return "ok";
+        case DispenseResult::SLOT_INVALID:   return "invalid_slot";
+        case DispenseResult::NO_CREDIT:      return "no_credit";
+        case DispenseResult::SLOT_EMPTY:     return "empty";
+        case DispenseResult::MAX_ACTIVE:     return "max_active";
+        case DispenseResult::PRIMING:        return "priming";
+        case DispenseResult::MACHINE_PAUSED: return "machine_paused";
+        case DispenseResult::SLOT_PAUSED:    return "slot_paused";
+        case DispenseResult::COOLDOWN:       return "cooldown";
+    }
+    return "unknown";
+}
+
+const char *pause_result_text(PauseResult r)
+{
+    switch (r) {
+        case PauseResult::OK:             return "ok";
+        case PauseResult::SLOT_INVALID:   return "invalid_slot";
+        case PauseResult::NOT_POURING:    return "not_pouring";
+        case PauseResult::ALREADY_PAUSED: return "already_paused";
+    }
+    return "unknown";
+}
+
+const char *resume_result_text(ResumeResult r)
+{
+    switch (r) {
+        case ResumeResult::OK:           return "ok";
+        case ResumeResult::SLOT_INVALID: return "invalid_slot";
+        case ResumeResult::NOT_PAUSED:   return "not_paused";
+    }
+    return "unknown";
+}
+
+int clamp_pause_max(const std::string &raw)
+{
+    int v;
+    try { v = std::stoi(raw); }
+    catch (...) {
+        log_error("pump", "PAUSE_MAX_S is not a number - using 120");
+        return 120;
+    }
+    if (v < 15)  { log_error("pump", "PAUSE_MAX_S below 15 - using 15");   return 15;  }
+    if (v > 600) { log_error("pump", "PAUSE_MAX_S above 600 - using 600"); return 600; }
+    return v;
+}
+
+// A pour is in flight exactly when presses have been consumed but not yet
+// closed out. armedUnitsReserved is incremented only by an accepted trigger
+// and zeroed by every close path (clean finish, dry tank, jam refund), so it
+// already tracks this and needs no extra flag kept in sync.
+//
+// isPumping must NOT be used for this: it means "the relay is energised", and
+// a pause switches the relay off while the pour is very much still open. The
+// two coincided only because nothing ever paused.
+static bool pourIsOpen(const PumpState &pump)
+{
+    return pump.armedUnitsReserved > 0;
+}
+
+DispenseResult pump_dispense(AppState &state, int slot)
+{
+    if (slot < 1 || slot > TOTAL_SLOTS) return DispenseResult::SLOT_INVALID;
+
+    // Refused rather than treated as a resume. A client that has lost track of
+    // the slot would otherwise restart a pour under a customer who is not
+    // holding their bottle under the nozzle.
+    if (pumps[slot].isPaused) return DispenseResult::SLOT_PAUSED;
+
+    return executeDispenseTrigger(state, slot);
+}
+
+PauseResult pump_pause(AppState &state, int slot)
+{
+    if (slot < 1 || slot > TOTAL_SLOTS) return PauseResult::SLOT_INVALID;
+
+    PumpState &pump = pumps[slot];
+    if (pump.isPaused)      return PauseResult::ALREADY_PAUSED;
+    // A prime is a fixed staff burst, not a customer's pour, and it consumes
+    // no credit -- so there is nothing here to hold.
+    if (!pourIsOpen(pump))  return PauseResult::NOT_POURING;
+
+    auto now = std::chrono::steady_clock::now();
+
+    // Store what is left of both deadlines. The pour timer is the obvious one;
+    // postPressDeadline is the jam-refund timer and is wall-clock too, so
+    // leaving it running would refund the press mid-pause and hand the
+    // customer the product already poured for free.
+    pump.remainingTimeWhenPaused = std::max(0LL,
+        (long long)std::chrono::duration_cast<std::chrono::milliseconds>(
+            pump.timer - now).count());
+    pump.postPressRemainingWhenPaused = std::max(0LL,
+        (long long)std::chrono::duration_cast<std::chrono::milliseconds>(
+            pump.postPressDeadline - now).count());
+
+    pump.isPaused      = true;
+    pump.pauseStartedAt = now;
+    digitalWrite(pin_pump[slot], PUMP_TRIGGER_LOW);
+
+    log_info("pump", "Slot " + std::to_string(slot) + ": PAUSED  remaining_ms="
+              + std::to_string(pump.remainingTimeWhenPaused));
+    return PauseResult::OK;
+}
+
+ResumeResult pump_resume(AppState &state, int slot)
+{
+    (void)state;
+    if (slot < 1 || slot > TOTAL_SLOTS) return ResumeResult::SLOT_INVALID;
+
+    PumpState &pump = pumps[slot];
+    if (!pump.isPaused) return ResumeResult::NOT_PAUSED;
+
+    auto now = std::chrono::steady_clock::now();
+    pump.pausedTotalMs += std::chrono::duration_cast<std::chrono::milliseconds>(
+        now - pump.pauseStartedAt).count();
+
+    // The freeze in pump_loop has been holding both deadlines at
+    // now + remainder every tick, so simply clearing the flag continues the
+    // pour with exactly the measure that was paid for still to run.
+    pump.isPaused = false;
+
+    log_info("pump", "Slot " + std::to_string(slot) + ": RESUMED  remaining_ms="
+              + std::to_string(pump.remainingTimeWhenPaused)
+              + "  paused_total_ms=" + std::to_string(pump.pausedTotalMs));
+    return ResumeResult::OK;
 }
 
 PrimeResult pump_start_prime(AppState &state, int slot)

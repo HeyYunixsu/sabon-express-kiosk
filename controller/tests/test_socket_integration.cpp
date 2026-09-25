@@ -17,6 +17,7 @@
 #include "test_framework.h"
 #include "socket_server.h"
 #include "app_state.h"
+#include "pump_control.h"
 #include <thread>
 #include <atomic>
 #include <chrono>
@@ -899,6 +900,135 @@ void test_integration_malformed_prime_is_ignored()
     CLOSE_CLIENT(sock);
 }
 
+// Settle before a dispense test.
+//
+// This harness runs server_app_loop only -- never pump_loop -- so a pour here
+// never progresses or completes: slotBusy is never cleared and a reserved press
+// is never released. CANCEL_ALL clears credits but not busy. That is why the
+// prime tests above each use a slot of their own, and why these do too: one slot
+// per stateful test, used once.
+//
+// So the pause/resume lifecycle is NOT tested here -- it cannot be, without the
+// pump loop. It is covered in test_dispense_commands.cpp, which drives the loop
+// directly. What is tested here is the socket layer: that one verb is parsed out
+// of three commands sharing a branch, and that every outcome comes back as a
+// token the kiosk can show a customer.
+static void settle_for_dispense()
+{
+    reset_for_prime();
+
+    // The prime tests just above leave two 3-second bursts running on other
+    // slots. Without pump_loop nothing clears them early -- their timers simply
+    // expire by wall clock -- and while two are still counted active, the power
+    // rail limit refuses a third pour with max_active instead of the answer
+    // under test. Wait them out once, then keep only the 200ms start cooldown
+    // for the tests that follow.
+    static bool bursts_waited = false;
+    if (!bursts_waited) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(
+            (int)(pump_prime_seconds() * 1000) + 400));
+        bursts_waited = true;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(250));
+}
+
+void test_integration_dispense_acknowledges_the_caller()
+{
+    settle_for_dispense();
+
+    ClientSock sock = connect_test_client();
+    CHECK(sock != INVALID_CLIENT_SOCK);
+    if (sock == INVALID_CLIENT_SOCK) return;
+    drain_connect_push(sock);
+
+    // Slot 6: untouched by every test above, so ARM cannot be queued behind a
+    // busy flag this harness has no way to clear.
+    send_cmd(sock, "ARM,6,1");
+    CHECK(wait_for([]{ return g_test_state.armedQty[6] == 1; }));
+
+    std::string resp = send_and_recv(sock, "DISPENSE,6");
+    CHECK(resp.find("DISPENSE_ACK,6,ok") != std::string::npos);
+
+    // One command, one press consumed -- exactly what one button press does.
+    CHECK(wait_for([]{ return g_test_state.armedQty[6] == 0; }));
+    CHECK_EQ(g_test_state.slotBusy[6], true);
+
+    CLOSE_CLIENT(sock);
+}
+
+void test_integration_dispense_reports_why_it_refused()
+{
+    settle_for_dispense();
+
+    ClientSock sock = connect_test_client();
+    CHECK(sock != INVALID_CLIENT_SOCK);
+    if (sock == INVALID_CLIENT_SOCK) return;
+    drain_connect_push(sock);
+
+    // Nobody paid, so nothing may pour -- and the kiosk is told which of the
+    // several possible refusals this was, not merely that it failed.
+    std::string resp = send_and_recv(sock, "DISPENSE,2");
+    CHECK(resp.find("DISPENSE_ACK,2,no_credit") != std::string::npos);
+
+    resp = send_and_recv(sock, "DISPENSE,99");
+    CHECK(resp.find("DISPENSE_ACK,99,invalid_slot") != std::string::npos);
+
+    CLOSE_CLIENT(sock);
+}
+
+void test_integration_pause_and_resume_answer_when_there_is_nothing_to_hold()
+{
+    settle_for_dispense();
+
+    ClientSock sock = connect_test_client();
+    CHECK(sock != INVALID_CLIENT_SOCK);
+    if (sock == INVALID_CLIENT_SOCK) return;
+    drain_connect_push(sock);
+
+    // Slot 1 has never had a pour started on it, so nothing is in flight.
+    std::string resp = send_and_recv(sock, "PAUSE,1");
+    CHECK(resp.find("PAUSE_ACK,1,not_pouring") != std::string::npos);
+
+    resp = send_and_recv(sock, "RESUME,1");
+    CHECK(resp.find("RESUME_ACK,1,not_paused") != std::string::npos);
+
+    // Both verbs validate the slot the same way DISPENSE does.
+    resp = send_and_recv(sock, "PAUSE,0");
+    CHECK(resp.find("PAUSE_ACK,0,invalid_slot") != std::string::npos);
+    resp = send_and_recv(sock, "RESUME,7");
+    CHECK(resp.find("RESUME_ACK,7,invalid_slot") != std::string::npos);
+
+    CLOSE_CLIENT(sock);
+}
+
+void test_integration_malformed_dispense_commands_are_ignored()
+{
+    // Garbage on the socket must never move a pump. Each of these is dropped
+    // with a log line and no ack, exactly as a malformed PRIME is.
+    settle_for_dispense();
+
+    ClientSock sock = connect_test_client();
+    CHECK(sock != INVALID_CLIENT_SOCK);
+    if (sock == INVALID_CLIENT_SOCK) return;
+    drain_connect_push(sock);
+
+    send_cmd(sock, "ARM,3,1");
+    CHECK(wait_for([]{ return g_test_state.armedQty[3] == 1; }));
+
+    for (const char *bad : {"DISPENSE", "PAUSE", "RESUME", "DISPENSE,1,2"}) {
+        send_cmd(sock, bad);
+        yield_to_server();
+    }
+
+    // Asserting an absence, so a fixed settle rather than wait_for.
+    yield_to_server();
+    CHECK_EQ(g_test_state.armedQty[3], 1);     // credit untouched
+    CHECK_EQ(g_test_state.slotBusy[3], false); // no pour started
+
+    g_test_state.armedQty[3] = 0;
+    CLOSE_CLIENT(sock);
+}
+
 void run_socket_integration_tests()
 {
     SUITE("socket integration (TCP protocol behavioral tests)");
@@ -943,6 +1073,11 @@ void run_socket_integration_tests()
     RUN_TEST(test_integration_prime_reports_why_it_refused);
     RUN_TEST(test_integration_prime_allowed_for_an_armed_slot);
     RUN_TEST(test_integration_malformed_prime_is_ignored);
+
+    RUN_TEST(test_integration_dispense_acknowledges_the_caller);
+    RUN_TEST(test_integration_dispense_reports_why_it_refused);
+    RUN_TEST(test_integration_pause_and_resume_answer_when_there_is_nothing_to_hold);
+    RUN_TEST(test_integration_malformed_dispense_commands_are_ignored);
 
     stop_integration_server();
 }

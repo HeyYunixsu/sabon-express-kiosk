@@ -328,6 +328,44 @@ static void process_command(AppState &state, const std::string &line,
         resp += "\n";
         send(current_client_socket, resp.c_str(), resp.length(), 0);
       }
+      else if (isFirstWordTest(client_buffer, "DISPENSE")
+            || isFirstWordTest(client_buffer, "PAUSE")
+            || isFirstWordTest(client_buffer, "RESUME"))
+      {
+        // The kiosk has no buttons, so these three do over TCP what a finger
+        // did at the panel: start one paid press pouring, hold it, continue it.
+        //
+        // Each answers the caller directly, as PRIME does. Without that a
+        // client cannot tell a refusal from a lost packet, and a customer is
+        // left looking at a screen that says nothing while nothing pours.
+        std::string input_str(client_buffer);
+        std::string verb = input_str.substr(0, input_str.find_first_of(" ,"));
+
+        if (socket_count_commas(client_buffer) != 1)
+        {
+          log_error("socket", std::string("Malformed ") + verb
+                    + " (expected 1 comma): " + client_buffer);
+        }
+        else
+        {
+          int slot = std::stoi(input_str.substr(input_str.find(',') + 1));
+          std::string result;
+
+          if (verb == "DISPENSE") {
+            result = dispense_result_text(pump_dispense(state, slot));
+          } else if (verb == "PAUSE") {
+            result = pause_result_text(pump_pause(state, slot));
+          } else {
+            result = resume_result_text(pump_resume(state, slot));
+          }
+
+          log_info("socket", verb + " slot " + std::to_string(slot) + ": " + result);
+
+          std::string ack = verb + "_ACK," + std::to_string(slot) + "," + result + "\n";
+          send(current_client_socket, ack.c_str(), ack.length(), 0);
+          broadcast_status(state);
+        }
+      }
       else if (isFirstWordTest(client_buffer, "PRIME"))
       {
         // PRIME,<slot> -- run one pump for a short fixed burst to push air out

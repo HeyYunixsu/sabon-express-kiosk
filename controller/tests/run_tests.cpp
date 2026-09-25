@@ -39,6 +39,9 @@ void run_button_hold_tests();
 // Armed credits that time out unclaimed
 void run_unclaimed_tests();
 
+// Starting and holding a pour with no physical button (kiosk piece 1)
+void run_dispense_command_tests();
+
 // Socket protocol integration tests (Phase 9/10)
 void run_socket_integration_tests();
 
@@ -67,6 +70,7 @@ int main()
     run_multi_press_tests();
     run_button_hold_tests();
     run_unclaimed_tests();
+    run_dispense_command_tests();
 
     // Integration tests run last — they bind a real socket on port 9901
     run_socket_integration_tests();
