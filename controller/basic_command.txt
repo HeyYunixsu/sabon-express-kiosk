@@ -1,0 +1,22 @@
+//Reference
+//https://www.youtube.com/watch?v=9KkzekAA_NQ&t=48s
+//https://github.com/WiringPi/WiringPi
+
+Basic steps to install it:
+git clone https://github.com/WiringPi/WiringPi.git
+cd WiringPi
+./build debian
+cd debian-template
+ls
+mv debian-template/wiringpi-3.0-1.deb .
+//sudo apt install wiringpifilewith.deb [Filename varies, subst your .deb file]
+ls
+sudo apt install ./wiringpifilewith.deb
+
+//to Compile
+g++ -std=c++17 -o button.exe button.cpp -lwiringPi
+g++ -std=c++17 -o main.exe main.cpp -lwiringPi
+
+//to run
+./button.exe
+

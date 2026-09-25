@@ -1,0 +1,38 @@
+env
+venv
+.venv
+config.env
+CONFIG/config.env
+# prices set on the machine itself -- per-deployment, like config.env
+CONFIG/prices.conf
+.env
+.vscode
+transaction/*.json
+.claude/
+*.gch
+copy_paste_log_from_rpi.txt
+*.o
+# make dependency files from -MMD, regenerated on every build
+*.d
+*.log
+*.aux
+*.exe
+*.cpp.save
+*.h.save
+*.pyc
+bin/
+controller/main
+**/__pycache__/
+**/venv/
+**/node_modules/
+.superdesign
+controller/tests/tmp_transaction/
+controller/tests/tmp_prime/
+controller/tests/test_runner
+
+# prime / purge events -- machine-local operational record, not source
+logs/
+
+# editor workspace files (local, per-developer)
+*.code-workspace
+

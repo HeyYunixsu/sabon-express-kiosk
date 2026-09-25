@@ -1,0 +1,2 @@
+sudo pm2 start /home/jomar/Desktop/dispenser/uploaders/water_level_monitoring.py --interpreter /home/jomar/Desktop/dispenser/uploaders/env/bin/python
+
