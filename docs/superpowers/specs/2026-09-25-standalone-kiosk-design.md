@@ -70,8 +70,11 @@ ATTRACT ──tap──▶ PICK ──▶ PAY ──paid──▶ UNLOCKED ─�
                             └── cash: staff PIN ──────────┘   └── pause/resume
 ```
 
-1. **Attract.** Products and prices, "Tap to start". Shows a "n presses
-   waiting — tap to continue" chip when the machine still owes someone.
+1. **Attract.** Products and prices, "Tap to start".
+   *As built:* no "n presses waiting" chip. It would hand one customer's paid
+   presses to whoever walks up next. Instead, whenever the machine owes
+   presses the kiosk shows the dispense screen, and unused presses expire at
+   `ARM_TIMEOUT_SECONDS` into `UNCLAIMED_LOG` for staff to settle.
 2. **Pick.** The existing product cards with + / −, a running total. Offline or
    empty tanks are shown exactly as the dashboard shows them today.
 3. **Pay.** Two buttons: *Pay with QR* and *Pay cash to staff*. The QR screen
@@ -164,8 +167,11 @@ so one firmware serves both products.
   machine info (machine ID, controller state, IP). These are the existing
   panels, moved across.
 - **PINs identify a person.** `config.env` holds `STAFFn_NAME` and
-  `STAFFn_PIN_SHA256` (n = 1..6), so the SD card does not carry the PINs. Five
-  wrong attempts lock the pad for 60 s, and that is logged.
+  `STAFFn_PIN_HASH` (n = 1..6). Five wrong attempts lock the pad for 60 s,
+  and that is logged.
+  *As built:* salted scrypt, not SHA-256. An unsalted SHA-256 of a 4-6 digit
+  PIN is reversed by trying all million PINs in under a second, so it would
+  not keep the PINs off the SD card.
 - **Cash accountability.** Every confirmed payment appends to
   `logs/payments.jsonl`:
 
@@ -180,7 +186,7 @@ so one firmware serves both products.
 ## New config keys
 
 ```
-STAFF1_NAME, STAFF1_PIN_SHA256 … STAFF6_*
+STAFF1_NAME, STAFF1_PIN_HASH … STAFF6_*
 PAYMENT_ONLINE_ENABLED     = 1
 PAYMENT_CREATE_PATH        = /api/v1/machine/payment
 PAYMENT_STATUS_PATH        = /api/v1/machine/payment

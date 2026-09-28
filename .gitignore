@@ -7,7 +7,7 @@ CONFIG/config.env
 CONFIG/prices.conf
 .env
 .vscode
-transaction/*.json
+transaction/
 .claude/
 *.gch
 copy_paste_log_from_rpi.txt

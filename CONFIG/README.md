@@ -46,6 +46,20 @@ fresh kiosk sets none of them. Set one only to move that file elsewhere.
 | Key | Default | Description |
 |-----|---------|-------------|
 | `KIOSK_PORT` | `3000` | HTTP port of the kiosk server. The touchscreen's browser runs on the same Pi and opens `http://localhost:3000/`, so it needs no root |
+| `KIOSK_IDLE_S` | `60` | Seconds without a touch before the pick and pay screens return to the start |
+
+### Staff (cash confirmation)
+
+| Key | Example | Description |
+|-----|---------|-------------|
+| `STAFF1_NAME`-`STAFF6_NAME` | `Ana` | Who a PIN belongs to. Written into every cash payment they confirm |
+| `STAFF1_PIN_HASH`-`STAFF6_PIN_HASH` | `scrypt$…$…` | Salted scrypt hash of that person's 4-8 digit PIN. Make one with `node kiosk_server/tools/hash_pin.js <PIN>` |
+
+A PIN identifies a person, so every cash sale in `logs/payments.jsonl` names
+who took the money. Only the hash is stored: `config.env` lives on the same SD
+card as everything else, and a plain or unsalted PIN would be read straight off
+it. Five wrong PINs in a row lock the pad for a minute and are logged to
+`logs/pin_lockouts.jsonl`. With no staff configured the kiosk cannot take cash.
 
 ### Slot hardware (BCM pin numbers)
 

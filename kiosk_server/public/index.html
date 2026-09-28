@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <title>Sabon Express</title>
+  <link rel="stylesheet" href="css/kiosk.css">
+</head>
+<body>
+<!-- One 1080x1920 stage, scaled to fit whatever window it is in. On the kiosk's
+     portrait screen the scale is exactly 1; on a laptop it shrinks to fit, so
+     the same page can be tested anywhere. -->
+<div id="stage">
+
+  <!-- ATTRACT -------------------------------------------------------------->
+  <section class="screen" id="s-attract" data-go="pick">
+    <img class="attract-logo" src="img/sabon-express-logo.png" alt="Sabon Express">
+    <h1 class="attract-title">Fill your own bottle</h1>
+    <p class="attract-sub">Detergent, fabric conditioner and bleach — pay only for what you pour.</p>
+    <div class="attract-shelf" id="attract-shelf"></div>
+    <div class="attract-cta">Tap anywhere to start</div>
+    <p class="attract-foot">Bring your own bottle · Pay with cash to staff</p>
+  </section>
+
+  <!-- PICK ------------------------------------------------------------------>
+  <section class="screen" id="s-pick" hidden>
+    <header class="bar">
+      <img class="bar-logo" src="img/sabon-express-logo.png" alt="">
+      <div class="bar-title">
+        <h2>Choose your products</h2>
+        <p>One press fills one measure. Add as many as you need.</p>
+      </div>
+      <button class="btn-ghost" data-go="attract">Cancel</button>
+    </header>
+    <div class="grid" id="grid"></div>
+    <footer class="total-bar">
+      <div>
+        <div class="total-label" id="pick-count">No products yet</div>
+        <div class="total-amount" id="pick-total">₱0</div>
+      </div>
+      <button class="btn-primary" id="to-pay" disabled>Continue to pay</button>
+    </footer>
+  </section>
+
+  <!-- PAY ------------------------------------------------------------------->
+  <section class="screen" id="s-pay" hidden>
+    <header class="bar">
+      <button class="btn-ghost" data-go="pick">‹ Back</button>
+      <div class="bar-title"><h2>Pay with cash</h2></div>
+      <button class="btn-ghost" data-go="attract">Cancel</button>
+    </header>
+
+    <div class="pay-card">
+      <ul class="summary" id="pay-summary"></ul>
+      <div class="pay-due">
+        <span>Amount to pay</span>
+        <strong id="pay-total">₱0</strong>
+      </div>
+      <p class="pay-note">Hand exactly <b id="pay-total-2">₱0</b> to a staff member.<br>
+        <span>Exact amount only — no change is given.</span></p>
+    </div>
+
+    <div class="pin-card" id="pin-card">
+      <div class="pin-head">
+        <span class="pin-badge">Staff only</span>
+        <span>Enter your PIN to confirm the cash was received</span>
+      </div>
+      <div class="pin-dots" id="pin-dots"></div>
+      <div class="pin-msg" id="pin-msg" role="alert"></div>
+      <div class="keypad" id="keypad">
+        <button data-k="1">1</button><button data-k="2">2</button><button data-k="3">3</button>
+        <button data-k="4">4</button><button data-k="5">5</button><button data-k="6">6</button>
+        <button data-k="7">7</button><button data-k="8">8</button><button data-k="9">9</button>
+        <button data-k="clear" class="k-alt">Clear</button><button data-k="0">0</button><button data-k="back" class="k-alt">⌫</button>
+      </div>
+      <button class="btn-primary wide" id="confirm-cash" disabled>Confirm payment</button>
+    </div>
+    <div class="pin-card is-off" id="cash-off" hidden>
+      <p>Cash payment is not set up on this kiosk yet.<br>Please call a staff member.</p>
+    </div>
+  </section>
+
+  <!-- DISPENSE -------------------------------------------------------------->
+  <section class="screen" id="s-dispense" hidden>
+    <header class="bar">
+      <img class="bar-logo" src="img/sabon-express-logo.png" alt="">
+      <div class="bar-title">
+        <h2 id="d-title">Payment received</h2>
+        <p id="d-sub">Fill your bottle one product at a time.</p>
+      </div>
+    </header>
+
+    <div class="pour-card" id="pour-card">
+      <div class="pour-img"><img id="d-img" alt=""></div>
+      <div class="pour-nozzle" id="d-nozzle">Nozzle 1</div>
+      <h3 class="pour-name" id="d-name">—</h3>
+      <p class="pour-meta" id="d-meta"></p>
+      <div class="progress"><div class="progress-fill" id="d-fill"></div></div>
+      <p class="pour-state" id="d-state">Place your bottle under the nozzle</p>
+      <button class="btn-pour" id="d-btn">Dispense now</button>
+      <p class="pour-msg" id="d-msg" role="alert"></p>
+    </div>
+
+    <div class="next" id="d-next"></div>
+  </section>
+
+  <!-- THANK YOU -------------------------------------------------------------->
+  <section class="screen" id="s-thanks" data-go="attract" hidden>
+    <div class="thanks-mark">✓</div>
+    <h1 class="attract-title">Thank you!</h1>
+    <p class="attract-sub">Please take your bottle. See you again soon.</p>
+  </section>
+
+  <!-- OFFLINE (over everything) ---------------------------------------------->
+  <div class="offline" id="offline" hidden>
+    <div class="offline-card">
+      <div class="offline-dot"></div>
+      <h2>Machine not ready</h2>
+      <p id="offline-text">Please wait a moment. If this stays, call a staff member.</p>
+    </div>
+  </div>
+
+</div>
+<script src="js/kiosk.js"></script>
+</body>
+</html>

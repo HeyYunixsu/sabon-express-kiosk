@@ -17,8 +17,8 @@ portrait, **1080×1920**. Design every screen for that size.
 | Piece | What | State |
 |---|---|---|
 | 1 | Controller `DISPENSE`, `PAUSE`, `RESUME` | **Done**, tested |
-| 2 | Kiosk server and customer screens, cash only | Next |
-| 3 | Staff PIN menu | After 2 |
+| 2 | Kiosk server and customer screens, cash only | **Done**, tested end to end against the real controller; not yet on a Pi |
+| 3 | Staff PIN menu | Next |
 | 4 | QR payment | Blocked: backend payment endpoints do not exist yet |
 | 5 | Install runbook for a kiosk Pi | Last |
 
@@ -40,10 +40,33 @@ PATH="<winlibs>/mingw64/bin:$PATH" ./tests/test_runner.exe
 ```
 
 ```bash
-# On a Pi: what is running, and the controller's live log
+# Kiosk server: tests (Node built-in runner, no dependencies)
+cd kiosk_server && npm test
+
+# Staff PIN hash for config.env
+node kiosk_server/tools/hash_pin.js 4821
+
+# On a Pi: what is running, and the live logs
 sudo pm2 list
 sudo pm2 logs 01_Dispenser_Controller
+sudo pm2 logs 05_Kiosk_Server
 ```
+
+### Trying the whole kiosk on a PC
+
+The controller builds against mock GPIO, so the real controller, the kiosk
+server and the screens all run on Windows:
+
+1. `CONFIG/config.env` from the sample, plus a `STAFF1_NAME` and
+   `STAFF1_PIN_HASH`.
+2. `cd controller && mingw32-make`, then run `main.exe` (compiler `bin` first
+   on the PATH, as above).
+3. `cd kiosk_server && node server.js`.
+4. Open `http://localhost:3000/`. The page scales its 1080×1920 stage to fit
+   any window, so a tall browser window shows it as the kiosk will.
+
+Sales land in `transaction/` (nothing uploads them unless the uploaders run)
+and cash payments in `logs/payments.jsonl`.
 
 ## Architecture
 
@@ -66,7 +89,11 @@ PM2 runs five processes, registered by `setup_and_run.sh`:
 | `02_Water_Sensors` | Tank empty detection | `uploaders/water_level_monitoring.py` |
 | `03_Transaction_Uploader` | Sales to the API, with a local queue | `uploaders/transaction_uploader.py` |
 | `04_Status_Uploader` | Machine health to the API | `uploaders/status_uploader.py` |
-| `05_Kiosk_Server` | **Not built yet** (piece 2) | — |
+| `05_Kiosk_Server` | Customer screens, cash confirmation, pour control | `kiosk_server/` |
+
+The touchscreen itself is Chromium in kiosk mode, started at desktop login by
+`~/.config/autostart/sabon-kiosk.desktop` (installed by `setup_and_run.sh`),
+which runs `kiosk_server/launch_browser.sh`.
 
 Ports: controller **8080** (`SOCKET_PORT`), kiosk server **3000**
 (`KIOSK_PORT`), both in `CONFIG/config.env`.
@@ -79,6 +106,10 @@ Ports: controller **8080** (`SOCKET_PORT`), kiosk server **3000**
 | `controller/src/socket_server.cpp` | TCP protocol and STATUS broadcast |
 | `controller/src/hardware_config.cpp` | Pin numbers, calibration, prices |
 | `uploaders/` | The three Python services |
+| `kiosk_server/server.js` | HTTP routes, state stream, cash sale rules |
+| `kiosk_server/lib/controller.js` | TCP client, STATUS parsing, offline rule, `dispensePaid` |
+| `kiosk_server/lib/staff.js` | Staff PIN hashing, checking, lockout |
+| `kiosk_server/public/` | The screens: `index.html`, `css/kiosk.css`, `js/kiosk.js` |
 | `CONFIG/config.env.sample` | Every setting. `CONFIG/README.md` explains each |
 | `docs/INSTALLATION.md`, `docs/QUICK_INSTALL.md` | Pi setup. Copied from the cashier product, adapted in piece 5 |
 | `kiosk_exit_tool/` | Keyboard shortcut to escape the locked-down browser |
@@ -135,16 +166,25 @@ not a closed or open socket.
     cashier dashboard. Staff touch this machine only to confirm a cash payment
     with their PIN and to open the hidden staff menu.
 
-## Open design questions
+## How the kiosk decides things
 
-Settle these in the piece that meets them, and update the spec:
-
-- **Leftover credit.** The spec's attract screen offers "n presses waiting —
-  tap to continue" to whoever walks up. Credit armed by a late QR payment, or
-  left after a pause timeout, would go to the next stranger.
-- **Staff PINs.** The spec stores `STAFFn_PIN_SHA256`. An unsalted SHA-256 of
-  a short PIN is cracked instantly, so use a salt and a slow hash (Node's
-  `crypto.scrypt`).
+- **The server prices the sale, not the page.** `/api/cash` recomputes the
+  total from the controller's prices and refuses (`price_changed`) if it
+  differs from what the customer was shown.
+- **Nothing is queued while offline.** An ARM or DISPENSE held for a reconnect
+  could fire hours later with nobody at the machine, so the server refuses.
+- **No new sale while the machine owes presses.** Any armed, busy or queued
+  slot refuses `/api/cash` (`machine_busy`), plus a 3-second guard after each
+  ARM until STATUS shows it.
+- **The dispense screen follows STATUS, not the page.** Paid presses on the
+  machine always show the dispense screen, so a reload never hides them.
+  There is no "tap to continue" on the attract screen; unused presses expire
+  at `ARM_TIMEOUT_SECONDS` into `UNCLAIMED_LOG`.
+- **Dispense Now pours the whole paid quantity** for that product, one
+  `DISPENSE` per press, 250 ms apart to clear the controller's cooldown.
+- **Staff PINs are salted scrypt** (`STAFFn_PIN_HASH`), not the spec's
+  `STAFFn_PIN_SHA256`: an unsalted SHA-256 of a short PIN is cracked
+  instantly.
 
 ## Known traps
 
