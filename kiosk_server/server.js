@@ -4,8 +4,11 @@
 // Serves the touchscreen UI and stands between it and the controller. The
 // browser never talks to the controller directly: it sees parsed state over
 // /api/stream and asks for actions over POST, and this process decides what
-// is allowed -- above all, what a cash sale costs and whether a staff PIN
-// really confirmed it.
+// is allowed -- above all, what a cash sale costs and who confirmed it.
+//
+// Cash is an order: the kiosk creates it, staff confirm it (on the kiosk's
+// PIN pad, or from the staff tablet), and confirmPaid() is the one place that
+// turns a confirmation into presses on the machine.
 //
 // Node standard library only, so a Pi needs no npm install for it.
 
@@ -14,6 +17,8 @@ const fs = require('fs');
 const path = require('path');
 const { createController, dispensePaid, SLOTS } = require('./lib/controller');
 const { loadStaff, createPinPad } = require('./lib/staff');
+const { stamp, appendJsonl } = require('./lib/records');
+const { createOrderBook } = require('./lib/orders');
 
 const MAX_QTY = 20;
 
@@ -36,15 +41,10 @@ function loadEnv(file) {
   return vars;
 }
 
-function stamp(d = new Date()) {
-  const p = (n) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} `
-       + `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
-}
-
-function appendJsonl(file, obj) {
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.appendFileSync(file, JSON.stringify(obj) + '\n', 'utf-8');
+function clampInt(v, lo, hi, dflt) {
+  const n = parseInt(v, 10);
+  if (!Number.isFinite(n)) return dflt;
+  return Math.min(hi, Math.max(lo, n));
 }
 
 const MIME = {
@@ -59,12 +59,14 @@ function createKioskServer({
   configPath = path.join(root, 'CONFIG', 'config.env'),
   logsDir = path.join(root, 'logs'),
   controller = {},
+  orderTimeoutMs,
   log = console.log,
 } = {}) {
   const config = loadEnv(configPath);
   const publicDir = path.join(__dirname, 'public');
   const paymentsLog = path.join(logsDir, 'payments.jsonl');
-  const lockoutLog = path.join(logsDir, 'pin_lockouts.jsonl');
+  const ordersLog = path.join(logsDir, 'orders.jsonl');
+  const staffLog = path.join(logsDir, 'staff_events.jsonl');
 
   const products = [];
   for (let i = 1; i <= SLOTS; i++) {
@@ -76,13 +78,25 @@ function createKioskServer({
     });
   }
   const idleSeconds = parseInt(config.KIOSK_IDLE_S || '60', 10) || 60;
+  const staffTablet = config.STAFF_TABLET === '1';
+  const letter = /^[A-Z]$/.test(config.KIOSK_LETTER || '') ? config.KIOSK_LETTER : 'A';
+  const timeoutMs = orderTimeoutMs || clampInt(config.ORDER_PAY_TIMEOUT_S, 60, 900, 180) * 1000;
+
+  // A record that cannot be written must not break the sale in front of the
+  // customer -- but it must be loud.
+  function record(file, obj) {
+    try { appendJsonl(file, obj); }
+    catch (e) { log(`[kiosk] NOT LOGGED to ${path.basename(file)} ${JSON.stringify(obj)}: ${e.message}`); }
+  }
+  function staffEvent(event, fields = {}) {
+    record(staffLog, { event, ...fields, date_created: stamp() });
+  }
 
   const staff = loadStaff(config);
-  const pinPad = createPinPad(staff, {
+  const kioskPad = createPinPad(staff, {
     onLock: () => {
-      log('[kiosk] PIN pad locked after repeated wrong PINs');
-      try { appendJsonl(lockoutLog, { event: 'pin_locked', date_created: stamp() }); }
-      catch (e) { log(`[kiosk] could not log lockout: ${e.message}`); }
+      log('[kiosk] kiosk PIN pad locked after repeated wrong PINs');
+      staffEvent('pin_locked', { where: 'kiosk' });
     },
   });
 
@@ -93,14 +107,55 @@ function createKioskServer({
     ...controller,
   });
 
+  // ---- orders -------------------------------------------------------------
+  const itemsText = (items) => items.map((i) => `${i.slot}:${i.qty}`).join(',');
+  const orders = createOrderBook({
+    letter,
+    timeoutMs,
+    onClose: (o) => {
+      record(ordersLog, {
+        reference: o.reference, items: itemsText(o.items), amount: o.amount,
+        status: o.status, reason: o.reason, by: o.by,
+        created: stamp(new Date(o.createdAt)), closed: stamp(new Date(o.closedAt)),
+      });
+      log(`[kiosk] order ${o.number} ${o.status}${o.reason ? ` (${o.reason})` : ''}${o.by ? ` by ${o.by}` : ''}`);
+      push();
+    },
+  });
+  // Expiry is decided at request time; this only makes sure the screens hear
+  // about it promptly when nobody is asking.
+  const expiryTimer = setInterval(() => orders.expireIfDue(), 500);
+
+  function publicOrder(o) {
+    if (!o) return null;
+    return {
+      number: o.number, reference: o.reference, amount: o.amount,
+      status: o.status, reason: o.reason, by: o.by,
+      items: o.items.map((i) => ({
+        slot: i.slot, qty: i.qty, price: i.price,
+        name: products[i.slot - 1].name, img: products[i.slot - 1].img,
+      })),
+      remainingMs: o.status === 'waiting' ? Math.max(0, o.expiresAt - Date.now()) : 0,
+      totalMs: o.expiresAt - o.createdAt,
+      created: stamp(new Date(o.createdAt)),
+      closed: o.closedAt ? stamp(new Date(o.closedAt)) : null,
+    };
+  }
+
   // ---- live state to the browser ----------------------------------------
   const streams = new Set();
   // The order being dispensed: what was bought, so the screen can say "1 of
   // 2 dispensed". STATUS only knows what is still owed. Held in memory; after
-  // a restart the page rebuilds the order from what STATUS still owes.
-  let order = null;
+  // a restart the page rebuilds it from what STATUS still owes.
+  let dispenseOrder = null;
   function snapshot() {
-    return { online: ctrl.online, status: ctrl.status, prices: ctrl.prices, order };
+    const closed = orders.closed();
+    return {
+      online: ctrl.online, status: ctrl.status, prices: ctrl.prices,
+      order: dispenseOrder,
+      pending: publicOrder(orders.current()),
+      lastClosed: publicOrder(closed[0] || null),
+    };
   }
   function push() {
     const data = `data: ${JSON.stringify(snapshot())}\n\n`;
@@ -130,66 +185,98 @@ function createKioskServer({
   const validSlot = (s) => Number.isInteger(s) && s >= 1 && s <= SLOTS;
   const machineInUse = () =>
     !ctrl.status || ctrl.status.slots.some((s) => s.armed > 0 || s.busy || s.queued > 0);
+  const pinRefusal = (who) => [
+    who.reason === 'locked' ? 423 : who.reason === 'no_staff' ? 503 : 401,
+    { error: who.reason, retryInMs: who.retryInMs },
+  ];
 
   // Between sending ARM and the STATUS that shows it, the machine still looks
   // free. Without this, a second confirm in that half second arms twice.
   let armingUntil = 0;
   const dispensing = new Set();
 
-  // ---- routes ---------------------------------------------------------------
-  async function cash(req, res) {
+  // The price is the controller's, never the page's.
+  function priceItems(raw) {
+    const items = Array.isArray(raw) ? raw : [];
+    if (items.length === 0) return { code: 400, body: { error: 'bad_items' } };
+    const seen = new Set();
+    for (const it of items) {
+      if (!it || !validSlot(it.slot) || seen.has(it.slot)) return { code: 400, body: { error: 'bad_items' } };
+      if (!Number.isInteger(it.qty) || it.qty < 1 || it.qty > MAX_QTY) return { code: 400, body: { error: 'bad_items' } };
+      seen.add(it.slot);
+    }
+    const priced = [];
+    for (const it of items) {
+      if (ctrl.status.slots[it.slot - 1].empty) return { code: 409, body: { error: 'empty', slot: it.slot } };
+      const price = ctrl.prices[it.slot];
+      if (!Number.isInteger(price)) return { code: 503, body: { error: 'no_prices' } };
+      priced.push({ slot: it.slot, qty: it.qty, price });
+    }
+    return { items: priced, amount: priced.reduce((a, i) => a + i.price * i.qty, 0) };
+  }
+
+  // The one way a payment becomes presses. The spec's five checks, in order,
+  // stopping at the first failure. Returns [httpCode, body].
+  function confirmPaid(o, name, via) {
+    orders.expireIfDue();
+    if (!o || o.status !== 'waiting') return [409, { error: 'not_waiting', order: publicOrder(o) }];
+    if (!ctrl.online) return [503, { error: 'offline' }];
+    if (o.items.some((i) => ctrl.status.slots[i.slot - 1].empty)) {
+      orders.cancel(o, 'out_of_stock');
+      return [409, { error: 'out_of_stock', order: publicOrder(o) }];
+    }
+    if (o.items.some((i) => ctrl.prices[i.slot] !== i.price)) {
+      orders.cancel(o, 'price_changed');
+      return [409, { error: 'price_changed', order: publicOrder(o) }];
+    }
+    if (Date.now() < armingUntil || machineInUse()) return [409, { error: 'machine_busy' }];
+    const batch = itemsText(o.items);
+    if (!ctrl.send(`ARM_BATCH,${batch}`)) return [503, { error: 'offline' }];
+    armingUntil = Date.now() + 3000;
+    record(paymentsLog, {
+      reference: o.reference, method: 'cash', amount: o.amount, items: batch,
+      staff: name, via, date_created: stamp(),
+    });
+    dispenseOrder = { reference: o.reference, staff: name, items: o.items.map(({ slot, qty }) => ({ slot, qty })) };
+    log(`[kiosk] cash ${o.reference} P${o.amount} by ${name} via ${via}: ARM_BATCH,${batch}`);
+    orders.paid(o, name);   // onClose pushes the new state to the screens
+    return [200, { ok: true, order: publicOrder(o) }];
+  }
+
+  // ---- kiosk routes -------------------------------------------------------
+  async function createOrder(req, res) {
     const body = await readBody(req);
     if (!body) return json(res, 400, { error: 'bad_request' });
     if (!ctrl.online) return json(res, 503, { error: 'offline' });
     if (Date.now() < armingUntil || machineInUse()) return json(res, 409, { error: 'machine_busy' });
-
-    const items = Array.isArray(body.items) ? body.items : [];
-    const seen = new Set();
-    for (const it of items) {
-      if (!validSlot(it.slot) || seen.has(it.slot)) return json(res, 400, { error: 'bad_items' });
-      if (!Number.isInteger(it.qty) || it.qty < 1 || it.qty > MAX_QTY) return json(res, 400, { error: 'bad_items' });
-      seen.add(it.slot);
-    }
-    if (items.length === 0) return json(res, 400, { error: 'bad_items' });
-
-    // The price is the controller's, never the page's. The customer is asked
-    // for what the page showed, so if the two differ the sale stops here
-    // rather than charging one figure and recording another.
-    let amount = 0;
-    for (const it of items) {
-      if (ctrl.status.slots[it.slot - 1].empty) return json(res, 409, { error: 'empty', slot: it.slot });
-      const price = ctrl.prices[it.slot];
-      if (!Number.isInteger(price)) return json(res, 503, { error: 'no_prices' });
-      amount += price * it.qty;
-    }
-    if (body.amount !== amount) return json(res, 409, { error: 'price_changed', amount });
-
-    const who = pinPad.check(body.pin);
-    if (!who.ok) {
-      const code = who.reason === 'locked' ? 423 : who.reason === 'no_staff' ? 503 : 401;
-      return json(res, code, { error: who.reason, retryInMs: who.retryInMs });
-    }
-
-    const batch = items.map((it) => `${it.slot}:${it.qty}`).join(',');
-    if (!ctrl.send(`ARM_BATCH,${batch}`)) return json(res, 503, { error: 'offline' });
-    armingUntil = Date.now() + 3000;
-
-    const record = {
-      reference: 'K-' + Date.now().toString(36).toUpperCase(),
-      method: 'cash',
-      amount,
-      staff: who.name,
-      items: batch,
-      date_created: stamp(),
-    };
-    // The presses are already granted, so a log failure must not undo the
-    // sale in front of the customer -- but it must be loud.
-    try { appendJsonl(paymentsLog, record); }
-    catch (e) { log(`[kiosk] PAYMENT NOT LOGGED ${JSON.stringify(record)}: ${e.message}`); }
-    log(`[kiosk] cash ${record.reference} P${amount} by ${who.name}: ARM_BATCH,${batch}`);
-    order = { reference: record.reference, staff: who.name, items: items.map(({ slot, qty }) => ({ slot, qty })) };
+    if (orders.current()) return json(res, 409, { error: 'order_waiting', order: publicOrder(orders.current()) });
+    const p = priceItems(body.items);
+    if (p.code) return json(res, p.code, p.body);
+    if (body.amount !== p.amount) return json(res, 409, { error: 'price_changed', amount: p.amount });
+    const o = orders.create(p.items);
+    log(`[kiosk] order ${o.number} P${o.amount}: ${itemsText(o.items)}`);
     push();
-    json(res, 200, { ok: true, reference: record.reference, staff: who.name, amount, order });
+    json(res, 200, { order: publicOrder(o) });
+  }
+
+  async function orderPin(req, res) {
+    const body = await readBody(req);
+    if (!body) return json(res, 400, { error: 'bad_request' });
+    const o = orders.current();
+    if (!o || o.number !== body.number) {
+      return json(res, 409, { error: 'not_waiting', order: publicOrder(orders.find(body.number)) });
+    }
+    const who = kioskPad.check(body.pin);
+    if (!who.ok) return json(res, ...pinRefusal(who));
+    json(res, ...confirmPaid(o, who.name, 'kiosk_pin'));
+  }
+
+  async function orderCancel(req, res) {
+    const body = await readBody(req);
+    const o = orders.current();
+    if (!body || !o || o.number !== body.number) return json(res, 409, { error: 'not_waiting' });
+    orders.cancel(o, 'customer');
+    json(res, 200, { ok: true });
   }
 
   async function slotCommand(req, res, verb) {
@@ -247,10 +334,13 @@ function createKioskServer({
 
   const server = http.createServer((req, res) => {
     const url = req.url.split('?')[0];
-    if (req.method === 'GET' && url === '/api/state')
-      return json(res, 200, { products, idleSeconds, cashReady: staff.length > 0, ...snapshot() });
+    if (req.method === 'GET' && url === '/api/state') {
+      return json(res, 200, { products, idleSeconds, cashReady: staff.length > 0, staffTablet, ...snapshot() });
+    }
     if (req.method === 'GET' && url === '/api/stream') return stream(req, res);
-    if (req.method === 'POST' && url === '/api/cash') return cash(req, res);
+    if (req.method === 'POST' && url === '/api/order') return createOrder(req, res);
+    if (req.method === 'POST' && url === '/api/order/pin') return orderPin(req, res);
+    if (req.method === 'POST' && url === '/api/order/cancel') return orderCancel(req, res);
     if (req.method === 'POST' && url === '/api/dispense') return slotCommand(req, res, 'DISPENSE');
     if (req.method === 'POST' && url === '/api/pause') return slotCommand(req, res, 'PAUSE');
     if (req.method === 'POST' && url === '/api/resume') return slotCommand(req, res, 'RESUME');
@@ -263,6 +353,7 @@ function createKioskServer({
     ctrl,
     port: parseInt(config.KIOSK_PORT || '3000', 10),
     close() {
+      clearInterval(expiryTimer);
       ctrl.close();
       for (const res of streams) res.end();
       server.close();
