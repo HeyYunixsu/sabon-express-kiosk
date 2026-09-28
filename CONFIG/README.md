@@ -36,13 +36,16 @@ cp config.env.sample config.env
 | Key | Default | Description |
 |-----|---------|-------------|
 | `SERVER_PORT` | `8080` | Port `controller` binds to (should match `SOCKET_PORT`) |
-| `TRANSACTION_DIR` | `../transaction` | Directory where `controller` writes JSON transaction files |
+| `TRANSACTION_DIR` | `<repo>/transaction` | Directory where `controller` writes JSON transaction files |
 
-### Cashier dashboard
+Every path key in this file defaults to a location inside the checkout, so a
+fresh kiosk sets none of them. Set one only to move that file elsewhere.
+
+### Kiosk server
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `DASHBOARD_PORT` | `80` | HTTP port for the dashboard. 80 needs root, which is why PM2 runs it via sudo |
+| `KIOSK_PORT` | `3000` | HTTP port of the kiosk server. The touchscreen's browser runs on the same Pi and opens `http://localhost:3000/`, so it needs no root |
 
 ### Slot hardware (BCM pin numbers)
 
@@ -66,12 +69,11 @@ One button, one LED and one pump relay per slot, all independent.
 
 | Key | Example | Description |
 |-----|---------|-------------|
-| `PRODUCT1_NAME`-`PRODUCT6_NAME` | `Fabcon 1` | What is loaded in that slot. Shown on the dashboard and used to label the local sales report |
+| `PRODUCT1_NAME`-`PRODUCT6_NAME` | `Fabcon 1` | What is loaded in that slot. Shown on the kiosk and used to label the local sales report |
 | `PRODUCT1_ML`-`PRODUCT6_ML` | `60` | Millilitres per press, for display only. The pump is timed by `calibrateProductN` |
 
-These were hardcoded in `index.html`, so every machine claimed to sell the same
-six things regardless of what was actually in the tanks. They are per client
-now. **The cloud receives only the slot number**, so keep a record of which
+They are per client: different clients stock different things. **The cloud
+receives only the slot number**, so keep a record of which
 product each slot holds on each machine - otherwise a report built elsewhere
 can only say "slot 3".
 
@@ -84,8 +86,8 @@ can only say "slot 3".
 The uploader deletes every transaction file the moment the cloud accepts it, so
 without this the machine remembers nothing of its own trading. The archive is
 written from the record the cloud acknowledged, so the two cannot drift, and
-the dashboard reads it plus anything still queued - a day stays complete even
-if the link has been down since morning.
+the staff menu's today's sales reads it plus anything still queued - a day
+stays complete even if the link has been down since morning.
 
 ### Interrupted sales
 
@@ -95,8 +97,8 @@ if the link has been down since morning.
 
 When a tank runs dry part-way through a pour the controller closes the
 dispense immediately - records the sale at full price, frees the slot, and
-appends here. The dashboard shows today's entries under **Needs Attention** so
-staff can settle the partial pour with the customer.
+appends here. The staff menu shows today's entries so staff can settle the
+partial pour with the customer.
 
 Full price is deliberate: it is what the customer was charged. Recording less
 would under-report revenue, and recording nothing - the old behaviour - left
@@ -106,11 +108,11 @@ the drawer short with nothing to explain it.
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `UNCLAIMED_LOG` | `<repo>/logs/unclaimed_credits.jsonl` | Credits paid for but never dispensed - expired at the timeout, or cancelled by the cashier: slot, qty, amount, reason, time |
+| `UNCLAIMED_LOG` | `<repo>/logs/unclaimed_credits.jsonl` | Credits paid for but never dispensed - expired at the timeout, or cancelled: slot, qty, amount, reason, time |
 
-An armed slot's credits are written off here if the customer never presses the
-button before `ARM_TIMEOUT_SECONDS` runs out (`reason: "timeout"`), or if the
-cashier cancels the sale first (`reason: "cancelled"`). Neither is a sale, so
+An armed slot's credits are written off here if the customer never dispenses
+them before `ARM_TIMEOUT_SECONDS` runs out (`reason: "timeout"`), or if the
+sale is cancelled first (`reason: "cancelled"`). Neither is a sale, so
 this file must stay outside `TRANSACTION_DIR` - the uploader treats every file
 in there as a sale to POST to the cloud.
 
@@ -119,7 +121,7 @@ in there as a sale to POST to the cloud.
 | Key | Default | Description |
 |-----|---------|-------------|
 | `PRICE1`-`PRICE6` | first value of `calibrateProductN` | Price per press, whole pesos. Becomes the transaction `amount` sent to the cloud |
-| `PRICES_FILE` | `<repo>/CONFIG/prices.conf` | Prices saved from the dashboard. **Overrides `PRICEn`** at startup |
+| `PRICES_FILE` | `<repo>/CONFIG/prices.conf` | Prices saved from the staff menu. **Overrides `PRICEn`** at startup |
 | `PRICE_LOG` | `<repo>/logs/price_changes.jsonl` | Append-only audit of every price change: slot, old value, new value, timestamp |
 
 Resolution order, last one wins:
@@ -133,7 +135,7 @@ Price and pour duration are deliberately separate keys. Price is commercial and
 changes with the market; duration is physical and set once at install. Keeping
 them in one tuple meant a price edit could fat-finger how much liquid comes out.
 
-Prices are editable from the dashboard (Settings -> Prices) so a client can set
+Prices are editable from the kiosk's staff menu so a client can set
 their own without a site visit. That is also a way to make sales look smaller
 than they were, so the controller refuses a change while any sale is armed, and
 writes every change to `PRICE_LOG` with the value it replaced. The log is the
@@ -146,7 +148,7 @@ quietly.
 |-----|---------|-------------|
 | `PRIME_SECONDS` | `3` | Length of one prime burst, in seconds. Clamped to `0.5`-`15` by the controller, because an over-long burst empties a gallon onto the floor with nobody at the machine |
 | `PRIME_LOG` | `<repo>/logs/prime_events.jsonl` | Where prime events are appended, one JSON object per line. **Must stay outside `TRANSACTION_DIR`** - the uploader treats every file in there as a sale to POST to the cloud |
-| `ARM_TIMEOUT_SECONDS` | `300` | How long an armed slot's button stays live before its credits are written off. Clamped to `30`-`1800` seconds by the controller - the button is physically live for the whole window, so raise it only as far as the counter actually needs |
+| `ARM_TIMEOUT_SECONDS` | `300` | How long paid presses wait to be dispensed before they are written off. Clamped to `30`-`1800` seconds by the controller - anyone at the machine can dispense them in that window, so keep it no longer than a customer needs |
 | `PAUSE_MAX_S` | `120` | How long a customer may hold a pour paused before it is ended and recorded. Clamped to `15`-`600`. Kiosk only - nothing sends `PAUSE` on a machine with physical buttons |
 
 `PAUSE_MAX_S` is totalled across every pause in a pour rather than reset on
@@ -161,8 +163,8 @@ settle the short pour.
 Priming clears air from a hose after a gallon change, so the next customer is
 not charged for a press that dispenses air. A prime moves product and records
 **no sale**, which is also what someone stealing from the till would want, so
-every prime is written to `PRIME_LOG` and counted back to staff on the
-dashboard's Maintenance panel. Nothing is ever written to the transaction
+every prime is written to `PRIME_LOG` and counted back to staff in the
+staff menu. Nothing is ever written to the transaction
 directory by a prime - not even a zero-peso record.
 
 ### Water level sensors (`uploaders`)
