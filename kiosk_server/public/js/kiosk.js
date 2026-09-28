@@ -160,12 +160,13 @@
 
   // ---- attract -------------------------------------------------------------------
   function renderShelf() {
+    // Every product lit, stock or not: this screen sells the range. Stock is
+    // shown on the shop screen, where it decides what can be bought.
     $('a-shelf').innerHTML = products.map((p) => `
-      <div class="a-item${isOut(p.slot) ? ' is-out' : ''}">
+      <div class="a-item">
         <div class="a-img"><img src="${p.img}" alt=""></div>
         <div class="n">${p.name}</div>
-        <div class="p">${isOut(p.slot) ? 'Out of stock'
-          : Number.isInteger(prices[p.slot]) ? `${peso(prices[p.slot])} per press` : '&nbsp;'}</div>
+        <div class="p">${Number.isInteger(prices[p.slot]) ? `${peso(prices[p.slot])} per press` : '&nbsp;'}</div>
       </div>`).join('');
   }
 
@@ -444,7 +445,7 @@
       : 'Place your bottle under the nozzle shown, then tap Dispense.';
     $('d-msg').textContent = status.paused ? POUR_MSG.machine_paused : pourMsg;
     const finished = allDone && !anyPouring;
-    $('d-done').disabled = !finished;
+    $('d-done').hidden = !finished;
     $('d-left').textContent = finished
       ? 'Everything is dispensed.'
       : sawCredit ? `${unitsLeft} ${unitsLeft === 1 ? 'unit' : 'units'} left to dispense` : 'Unlocking your items…';

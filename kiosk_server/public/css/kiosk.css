@@ -363,7 +363,9 @@ button:disabled { cursor: default; }
 .d-foot { position: relative; display: flex; justify-content: center; align-items: center; min-height: 104px; }
 .d-left { position: absolute; left: 0; font-size: 24px; color: var(--ink-2); }
 .d-done { min-width: 520px; min-height: 104px; font-size: 36px; }
-.d-done:not(:disabled) { animation: pulse 2.2s ease-in-out infinite; }
+/* Hidden until every unit is poured, then it pops in and keeps pulsing. */
+.d-done { animation: pop .35s cubic-bezier(.2, 1.4, .4, 1), pulse 2.2s ease-in-out .35s infinite; }
+@keyframes pop { from { transform: scale(.6); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 @keyframes pulse { 50% { box-shadow: 0 0 0 16px rgba(59,109,240,.18); } }
 
 /* thanks */
@@ -406,15 +408,14 @@ button:disabled { cursor: default; }
 }
 .a-item {
   display: flex; flex-direction: column; align-items: center; justify-content: center;
-  padding: 16px; border: 2px solid var(--line); border-radius: var(--r-panel);
+  padding: 16px; border: 2px solid var(--brand); border-radius: var(--r-panel);
+  box-shadow: 0 0 0 4px var(--brand-tint), 0 0 24px 4px var(--brand-glow);
   min-height: 0;
 }
 .a-item .a-img { flex: 1; min-height: 0; width: 100%; display: flex; justify-content: center; align-items: center; background: var(--tile); border-radius: 14px; padding: 10px; }
 .a-item .a-img img { max-height: 100%; max-width: 100%; object-fit: contain; }
 .a-item .n { margin-top: 12px; font-size: 26px; font-weight: 700; }
 .a-item .p { margin-top: 4px; font-size: 22px; color: var(--brand); font-weight: 700; }
-.a-item.is-out { opacity: .45; }
-.a-item.is-out .p { color: var(--ink-2); }
 
 /* ---- offline ---------------------------------------------------------------- */
 .offline { position: absolute; inset: 0; z-index: 10; display: grid; place-items: center; background: rgba(0,0,0,.7); }
