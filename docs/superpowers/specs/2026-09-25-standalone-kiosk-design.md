@@ -84,6 +84,13 @@ ATTRACT ──tap──▶ PICK ──▶ PAY ──paid──▶ UNLOCKED ─�
    bar, **Dispense Now**, then tap to pause and tap to resume. The pour stops
    itself at the paid amount. When a product is finished the modal moves to the
    next one.
+   *As built (2026-09-28, owner's revision):* one "Your purchased products"
+   modal holding a card per product — photo, name, quantity, nozzle, and a
+   Dispense button at the bottom. **Each tap pours one unit**, and the card
+   counts them off ("1 of 2 dispensed") until it reads **Dispensed** and its
+   button **Completed**, so nothing can be poured twice. One product pours at
+   a time; that card's button becomes Pause, then Resume. The modal stays open
+   until every unit is poured, then shows **Done**.
 5. **Thank you**, then back to attract after 10 s.
 
 ## Payment rules

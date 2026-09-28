@@ -81,27 +81,24 @@
   </section>
 
   <!-- DISPENSE -------------------------------------------------------------->
+  <!-- One card per purchased product. Each card's button pours ONE unit of
+       that product, so a quantity of 2 is two taps and the card counts them. -->
   <section class="screen" id="s-dispense" hidden>
-    <header class="bar">
-      <img class="bar-logo" src="img/sabon-express-logo.png" alt="">
-      <div class="bar-title">
-        <h2 id="d-title">Payment received</h2>
-        <p id="d-sub">Fill your bottle one product at a time.</p>
-      </div>
-    </header>
-
-    <div class="pour-card" id="pour-card">
-      <div class="pour-img"><img id="d-img" alt=""></div>
-      <div class="pour-nozzle" id="d-nozzle">Nozzle 1</div>
-      <h3 class="pour-name" id="d-name">—</h3>
-      <p class="pour-meta" id="d-meta"></p>
-      <div class="progress"><div class="progress-fill" id="d-fill"></div></div>
-      <p class="pour-state" id="d-state">Place your bottle under the nozzle</p>
-      <button class="btn-pour" id="d-btn">Dispense now</button>
+    <div class="modal">
+      <header class="modal-head">
+        <div class="modal-check">✓</div>
+        <div>
+          <h2>Your purchased products</h2>
+          <p id="d-sub">Place your bottle under the nozzle shown, then tap Dispense.</p>
+        </div>
+      </header>
+      <div class="d-grid" id="d-grid"></div>
       <p class="pour-msg" id="d-msg" role="alert"></p>
+      <footer class="modal-foot">
+        <div class="foot-text" id="d-left"></div>
+        <button class="btn-done" id="d-done" hidden>Done</button>
+      </footer>
     </div>
-
-    <div class="next" id="d-next"></div>
   </section>
 
   <!-- THANK YOU -------------------------------------------------------------->

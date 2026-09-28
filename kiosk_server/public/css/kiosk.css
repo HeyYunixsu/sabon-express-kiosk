@@ -209,54 +209,105 @@ button:disabled { cursor: default; }
 .keypad button.k-alt { font-size: 36px; color: var(--ink-2); }
 .keypad button:active { background: var(--brand-tint); }
 
-/* ---- dispense --------------------------------------------------------- */
-.pour-card {
-  flex: 1;
+/* ---- dispense: one card per purchased product ------------------------- */
+#s-dispense { background: rgba(11,19,32,.55); padding: 48px; }
+.modal {
+  flex: 1; display: flex; flex-direction: column; min-height: 0;
+  background: var(--bg); border-radius: 44px; padding: 44px;
+  box-shadow: 0 30px 80px rgba(0,0,0,.35);
+  animation: rise .3s ease-out;
+}
+@keyframes rise { from { transform: translateY(40px); opacity: 0; } to { transform: none; opacity: 1; } }
+.modal-head { display: flex; align-items: center; gap: 28px; margin-bottom: 32px; }
+.modal-check {
+  flex: none; width: 96px; height: 96px; border-radius: 50%;
+  display: grid; place-items: center;
+  background: var(--green); color: #fff; font-size: 56px; font-weight: 700;
+}
+.modal-head h2 { margin: 0; font-size: 52px; line-height: 1.1; }
+.modal-head p  { margin: 8px 0 0; font-size: 28px; color: var(--ink-2); }
+
+.d-grid {
+  flex: 1; min-height: 0;
+  display: grid; grid-template-columns: 1fr 1fr; grid-auto-rows: 1fr; gap: 24px;
+}
+.d-grid.one { grid-template-columns: 1fr; }
+.d-card {
   display: flex; flex-direction: column; align-items: center; text-align: center;
-  background: var(--surface); border-radius: var(--r-card); box-shadow: var(--shadow);
-  padding: 48px 56px;
+  min-height: 0; padding: 24px 24px 24px;
+  background: var(--surface); border: 4px solid transparent;
+  border-radius: var(--r-card); box-shadow: var(--shadow);
+  transition: border-color .2s, background .2s;
 }
-.pour-img { height: 520px; display: flex; justify-content: center; }
-.pour-img img { height: 100%; object-fit: contain; }
-.pour-nozzle {
-  margin-top: 24px; padding: 12px 36px; border-radius: var(--r-pill);
+.d-card.is-pouring { border-color: var(--brand); }
+.d-card.is-paused  { border-color: var(--amber); }
+.d-card.is-done    { background: var(--green-tint); }
+.d-card.is-waiting { opacity: .55; }
+.d-img { flex: 1; min-height: 0; width: 100%; display: flex; justify-content: center; }
+.d-img img { width: 100%; height: 100%; object-fit: contain; }
+.d-nozzle {
+  margin-top: 12px; padding: 6px 22px; border-radius: var(--r-pill);
   background: var(--brand-tint); color: var(--brand);
-  font-size: 34px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase;
+  font-size: 24px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase;
 }
-.pour-name { margin: 20px 0 0; font-size: 72px; }
-.pour-meta { margin: 10px 0 0; font-size: 34px; color: var(--ink-2); }
-.progress {
-  width: 100%; height: 40px; margin-top: 44px;
-  border-radius: var(--r-pill); background: var(--surface-sub); border: 2px solid var(--line);
-  overflow: hidden;
+.d-name { margin: 12px 0 0; font-size: 38px; }
+.d-qty  { margin-top: 4px; font-size: 28px; color: var(--ink-2); }
+.d-pips { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-top: 14px; min-height: 24px; }
+.d-pips i { width: 24px; height: 24px; border-radius: 50%; background: var(--line); }
+.d-pips i.done { background: var(--green); }
+.d-pips i.now  { background: var(--brand); animation: blink 1s ease-in-out infinite; }
+.d-status { margin-top: 12px; font-size: 30px; font-weight: 700; }
+.d-card.is-done .d-status { color: var(--green); }
+.d-bar {
+  width: 100%; height: 18px; margin-top: 14px;
+  border-radius: var(--r-pill); background: var(--surface-sub); overflow: hidden;
+  visibility: hidden;
 }
-.progress-fill { height: 100%; width: 0; background: linear-gradient(90deg, var(--brand), #2F86E6); transition: width .45s linear; }
-.progress-fill.is-paused { background: var(--amber); }
-.progress-fill.is-done { background: var(--green); }
-.pour-state { margin: 24px 0 0; font-size: 38px; font-weight: 700; }
-.btn-pour {
-  width: 100%; min-height: 200px; margin-top: auto;
-  border-radius: 48px; background: var(--lime); color: #0E2A0B;
-  font-size: 64px; font-weight: 700;
-  box-shadow: 0 16px 32px rgba(140,198,63,.35);
+.d-card.is-pouring .d-bar, .d-card.is-paused .d-bar { visibility: visible; }
+.d-bar i { display: block; height: 100%; width: 0; background: var(--brand); transition: width .45s linear; }
+.d-card.is-paused .d-bar i { background: var(--amber); }
+.d-btn {
+  width: 100%; min-height: 112px; margin-top: 18px;
+  border-radius: 28px; background: var(--lime); color: #0E2A0B;
+  font-size: 40px; font-weight: 700; letter-spacing: 1px;
+  box-shadow: 0 10px 24px rgba(140,198,63,.3);
   transition: transform .08s;
 }
-.btn-pour:active:not(:disabled) { transform: scale(.98); }
-.btn-pour.is-pause { background: var(--amber); color: #fff; box-shadow: 0 16px 32px rgba(217,142,4,.3); }
-.btn-pour.is-resume { background: var(--brand); color: #fff; box-shadow: 0 16px 32px rgba(3,78,162,.3); }
-.btn-pour:disabled { background: #D5DCE4; color: var(--ink-3); box-shadow: none; }
-.pour-msg { min-height: 48px; margin: 24px 0 0; font-size: 32px; font-weight: 700; color: var(--red); }
+.d-btn:active:not(:disabled) { transform: scale(.97); }
+.d-btn.is-pause  { background: var(--amber); color: #fff; box-shadow: 0 10px 24px rgba(217,142,4,.3); }
+.d-btn.is-resume { background: var(--brand); color: #fff; box-shadow: 0 10px 24px rgba(3,78,162,.3); }
+.d-btn.is-done   { background: transparent; color: var(--green); box-shadow: none; border: 3px solid var(--green); }
+.d-btn:disabled:not(.is-done) { background: #D5DCE4; color: var(--ink-3); box-shadow: none; }
+.d-grid.one .d-name { font-size: 64px; }
+.d-grid.one .d-btn { min-height: 180px; font-size: 60px; }
 
-.next { margin-top: 32px; display: flex; gap: 20px; flex-wrap: wrap; min-height: 90px; }
-.next-item {
-  display: flex; align-items: center; gap: 16px;
-  padding: 14px 28px 14px 14px; border-radius: var(--r-pill);
-  background: var(--surface); box-shadow: var(--shadow);
-  font-size: 30px; font-weight: 700;
+/* Five or six products: three short rows, so each card goes sideways --
+   photo on the left, details on the right, the button across the bottom. */
+.d-grid.many .d-card {
+  display: grid; grid-template-columns: 150px 1fr;
+  grid-template-rows: repeat(6, auto) 1fr auto;
+  column-gap: 20px; align-items: center; justify-items: start; text-align: left;
+  padding: 20px;
 }
-.next-item img { width: 60px; height: 60px; object-fit: contain; }
-.next-item.is-now { outline: 4px solid var(--brand); }
-.next-label { width: 100%; font-size: 28px; color: var(--ink-2); }
+.d-grid.many .d-card > * { grid-column: 2; }
+.d-grid.many .d-img { grid-column: 1; grid-row: 1 / 8; height: 100%; }
+.d-grid.many .d-nozzle { margin-top: 0; font-size: 20px; padding: 4px 16px; }
+.d-grid.many .d-name { margin-top: 6px; font-size: 32px; }
+.d-grid.many .d-qty { font-size: 24px; }
+.d-grid.many .d-pips { justify-content: flex-start; margin-top: 8px; }
+.d-grid.many .d-status { margin-top: 6px; font-size: 26px; }
+.d-grid.many .d-bar { margin-top: 8px; }
+.d-grid.many .d-btn { grid-column: 1 / -1; grid-row: 8; min-height: 96px; font-size: 34px; margin-top: 12px; }
+
+.pour-msg { min-height: 44px; margin: 18px 0 0; text-align: center; font-size: 30px; font-weight: 700; color: var(--red); }
+.modal-foot { display: flex; align-items: center; justify-content: space-between; gap: 24px; margin-top: 12px; min-height: 120px; }
+.foot-text { font-size: 32px; color: var(--ink-2); }
+.btn-done {
+  min-height: 120px; padding: 0 96px; border-radius: var(--r-pill);
+  background: var(--brand); color: #fff; font-size: 48px; font-weight: 700;
+  box-shadow: 0 10px 24px rgba(3,78,162,.3);
+  animation: pulse 2.2s ease-in-out infinite;
+}
 
 /* ---- thank you -------------------------------------------------------- */
 .thanks-mark {

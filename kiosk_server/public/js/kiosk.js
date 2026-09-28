@@ -10,6 +10,7 @@
   const OFFLINE_MS = 6000;        // silence that means the machine is gone
   const THANKS_MS = 10000;
   const PAUSED_AFTER_MS = 900;    // remaining time frozen this long = paused
+  const DONE_AUTO_MS = 20000;     // all dispensed, Done not tapped: finish anyway
 
   const $ = (id) => document.getElementById(id);
   const peso = (n) => '₱' + n;
@@ -30,12 +31,14 @@
   let pin = '';
   let lastTouch = Date.now();
   let thanksAt = 0;
-  let staffName = '';
+  let order = null;               // { reference, staff, items } from the server
 
   let sending = false;            // one request at a time from this page
   let dispenseEnteredAt = 0;
   let sawCredit = false;
-  let noCreditSince = 0;
+  let doneSince = 0;
+  let sendingSlot = 0;
+  let cardsKey = '';
   let pourMsg = '';
   const pour = {};                // slot -> { max, last, changedAt, pausedLocal }
 
@@ -77,10 +80,10 @@
     if (name === screen) return;
     screen = name;
     for (const el of document.querySelectorAll('.screen')) el.hidden = el.id !== `s-${name}`;
-    if (name === 'attract') { cart = {}; pin = ''; staffName = ''; }
+    if (name === 'attract') { cart = {}; pin = ''; }
     if (name === 'pay') { pin = ''; setPinMsg(''); }
     if (name === 'dispense') {
-      dispenseEnteredAt = Date.now(); sawCredit = false; noCreditSince = 0; pourMsg = '';
+      dispenseEnteredAt = Date.now(); sawCredit = false; doneSince = 0; pourMsg = ''; cardsKey = '';
     }
     if (name === 'thanks') thanksAt = Date.now();
     lastTouch = Date.now();
@@ -92,14 +95,15 @@
     if (creditOnMachine()) {
       if (screen !== 'dispense') show('dispense');
       sawCredit = true;
-      noCreditSince = 0;
+      doneSince = 0;
       return;
     }
     if (screen !== 'dispense') return;
     if (sawCredit) {
-      // Short grace: between one product finishing and STATUS catching up.
-      noCreditSince = noCreditSince || now;
-      if (now - noCreditSince > 1500) show('thanks');
+      // Everything poured: the Done button is up. If nobody taps it, finish
+      // anyway so the next customer is not left looking at this order.
+      doneSince = doneSince || now;
+      if (now - doneSince > DONE_AUTO_MS) show('thanks');
     } else if (now - dispenseEnteredAt > 8000) {
       pourMsg = 'Your products could not be unlocked. Please call a staff member.';
     }
@@ -220,7 +224,7 @@
     sending = false;
     pin = '';
     if (r.code === 200) {
-      staffName = r.body.staff;
+      order = r.body.order;
       show('dispense');
       return;
     }
@@ -240,7 +244,7 @@
     renderPay();
   });
 
-  // ---- dispense ------------------------------------------------------------------
+  // ---- dispense: one card per purchased product ------------------------------
   function trackPours() {
     const now = Date.now();
     for (const s of status.slots) {
@@ -257,12 +261,51 @@
     return p.pausedLocal || (s.remainingMs > 0 && Date.now() - p.changedAt > PAUSED_AFTER_MS);
   }
 
-  // The pour in progress first, then the lowest slot still owed presses.
-  function currentSlot() {
-    if (!status) return null;
-    const sl = status.slots;
-    return sl.find((s) => s.busy) || sl.find((s) => s.armed > 0 && !s.empty)
-        || sl.find((s) => s.armed > 0) || sl.find((s) => s.queued > 0) || null;
+  // What was bought. The server remembers the order; anything STATUS still
+  // owes that the order does not list (a server restart lost it) is added
+  // from STATUS, so paid presses are never missing from the screen.
+  function orderItems() {
+    const items = order ? order.items.map((i) => ({ slot: i.slot, qty: i.qty })) : [];
+    if (status) {
+      for (const s of status.slots) {
+        if (!hasCredit(s) || items.some((i) => i.slot === s.slot)) continue;
+        items.push({ slot: s.slot, qty: s.armed + s.queued + (s.busy ? 1 : 0) });
+      }
+    }
+    return items.sort((a, b) => a.slot - b.slot);
+  }
+
+  // Units dispensed = bought - still owed - the one pouring now.
+  function units(item) {
+    const s = slotState(item.slot);
+    const left = s.armed + s.queued;
+    const pouring = s.busy ? 1 : 0;
+    const qty = Math.max(item.qty, left + pouring);
+    return { s, qty, pouring: !!s.busy, done: sawCredit ? qty - left - pouring : 0 };
+  }
+
+  // Built once per order and updated in place, so a tap is never lost to a
+  // rebuild under the finger.
+  function buildCards(items) {
+    const key = items.map((i) => `${i.slot}:${i.qty}`).join(',');
+    if (key === cardsKey) return;
+    cardsKey = key;
+    const grid = $('d-grid');
+    grid.classList.toggle('one', items.length === 1);
+    grid.classList.toggle('many', items.length > 4);
+    grid.innerHTML = items.map((i) => {
+      const p = products[i.slot - 1];
+      return `<div class="d-card" id="dc-${i.slot}">
+        <div class="d-img"><img src="${p.img}" alt=""></div>
+        <div class="d-nozzle">Nozzle ${i.slot}</div>
+        <h3 class="d-name">${p.name}</h3>
+        <div class="d-qty"></div>
+        <div class="d-pips"></div>
+        <div class="d-status"></div>
+        <div class="d-bar"><i></i></div>
+        <button class="d-btn" data-slot="${i.slot}">DISPENSE</button>
+      </div>`;
+    }).join('');
   }
 
   const POUR_MSG = {
@@ -278,82 +321,87 @@
   };
 
   function renderDispense() {
-    const btn = $('d-btn');
-    const fill = $('d-fill');
-    $('d-sub').textContent = staffName
-      ? `Cash received by ${staffName}. Fill one product at a time.`
-      : 'Fill your bottle one product at a time.';
-    const c = currentSlot();
-    if (!c) {
-      $('d-state').textContent = sawCredit ? 'All done!' : 'Unlocking your products…';
-      fill.style.width = sawCredit ? '100%' : '0';
-      fill.className = 'progress-fill' + (sawCredit ? ' is-done' : '');
-      btn.disabled = true;
-      btn.className = 'btn-pour';
-      btn.textContent = sawCredit ? 'Done' : 'Please wait';
-      btn.dataset.act = '';
-      $('d-msg').textContent = pourMsg;
-      $('d-next').innerHTML = '';
-      return;
+    if (!status) return;
+    const items = orderItems();
+    buildCards(items);
+    const anyPouring = status.slots.some((s) => s.busy);
+    let unitsLeft = 0;
+    let allDone = sawCredit && items.length > 0;
+
+    for (const item of items) {
+      const card = $(`dc-${item.slot}`);
+      if (!card) continue;
+      const prod = products[item.slot - 1];
+      const u = units(item);
+      const paused = isPaused(u.s);
+      const complete = sawCredit && u.done >= u.qty && !u.pouring;
+      if (!complete) allDone = false;
+      unitsLeft += u.qty - u.done;
+
+      card.classList.toggle('is-pouring', u.pouring && !paused);
+      card.classList.toggle('is-paused', u.pouring && paused);
+      card.classList.toggle('is-done', complete);
+      card.classList.toggle('is-waiting', !u.pouring && !complete && (anyPouring || sending));
+
+      card.querySelector('.d-qty').textContent =
+        `Quantity: ${u.qty}${prod.ml ? ` · ${prod.ml} ml each` : ''}`;
+      card.querySelector('.d-pips').innerHTML = u.qty <= 12
+        ? Array.from({ length: u.qty }, (_, i) =>
+            `<i class="${i < u.done ? 'done' : i === u.done && u.pouring ? 'now' : ''}"></i>`).join('')
+        : '';
+      card.querySelector('.d-status').textContent =
+        !sawCredit ? 'Unlocking…'
+        : complete ? '✓ Dispensed'
+        : paused ? `Paused · unit ${u.done + 1} of ${u.qty}`
+        : u.pouring ? `Dispensing unit ${u.done + 1} of ${u.qty}…`
+        : u.s.empty ? 'Out of stock — please call staff'
+        : `${u.done} of ${u.qty} dispensed`;
+
+      const p = pour[item.slot];
+      const pct = u.pouring && p && p.max ? Math.round(100 * (1 - u.s.remainingMs / p.max)) : 0;
+      card.querySelector('.d-bar i').style.width = `${pct}%`;
+
+      const btn = card.querySelector('.d-btn');
+      let act = '';
+      let label = 'PLEASE WAIT';
+      let cls = 'd-btn';
+      if (sending && sendingSlot === item.slot) label = 'STARTING…';
+      else if (!sawCredit) label = 'PLEASE WAIT';
+      else if (u.pouring && paused) { act = 'resume'; label = 'RESUME'; cls += ' is-resume'; }
+      else if (u.pouring) { act = 'pause'; label = 'PAUSE'; cls += ' is-pause'; }
+      else if (complete) { label = 'COMPLETED'; cls += ' is-done'; }
+      else if (u.s.empty) label = 'CALL STAFF';
+      else if (!anyPouring && !sending) { act = 'dispense'; label = u.done ? 'DISPENSE NEXT' : 'DISPENSE'; }
+      btn.dataset.act = act;
+      btn.disabled = !act;
+      btn.className = cls;
+      btn.textContent = label;
     }
 
-    const prod = products[c.slot - 1];
-    const paused = isPaused(c);
-    const p = pour[c.slot];
-    if ($('d-img').getAttribute('src') !== prod.img) $('d-img').src = prod.img;
-    $('d-nozzle').textContent = `Nozzle ${c.slot}`;
-    $('d-name').textContent = prod.name;
-    $('d-meta').textContent = c.busy
-      ? (c.armed > 0 ? `Pouring · ${plural(c.armed, 'press')} still to go` : 'Pouring your paid measure')
-      : `${plural(c.armed, 'press')} paid${prod.ml ? ` · ${c.armed * prod.ml} ml` : ''}`;
-
-    const pct = c.busy && p && p.max ? Math.round(100 * (1 - c.remainingMs / p.max)) : 0;
-    fill.style.width = `${pct}%`;
-    fill.className = 'progress-fill' + (paused ? ' is-paused' : '');
-
-    let act = '';
-    if (sending) {
-      btn.disabled = true; btn.className = 'btn-pour'; btn.textContent = 'Starting…';
-    } else if (c.busy && paused) {
-      act = 'resume'; btn.disabled = false; btn.className = 'btn-pour is-resume'; btn.textContent = 'Resume';
-    } else if (c.busy) {
-      act = 'pause'; btn.disabled = false; btn.className = 'btn-pour is-pause'; btn.textContent = 'Pause';
-    } else if (c.armed > 0 && !c.empty) {
-      act = 'dispense'; btn.disabled = false; btn.className = 'btn-pour'; btn.textContent = 'Dispense now';
-    } else {
-      btn.disabled = true; btn.className = 'btn-pour';
-      btn.textContent = c.empty ? 'Please call staff' : 'Please wait';
-    }
-    btn.dataset.act = act;
-    btn.dataset.slot = c.slot;
-
-    $('d-state').textContent =
-      c.empty && !c.busy ? 'This product has run out'
-      : paused ? 'Paused — tap Resume when your bottle is ready'
-      : c.busy ? `Pouring… keep your bottle under nozzle ${c.slot}`
-      : `Place your bottle under nozzle ${c.slot}`;
+    $('d-sub').textContent = order && order.staff
+      ? `Cash received by ${order.staff}. Place your bottle under the nozzle shown, then tap Dispense.`
+      : 'Place your bottle under the nozzle shown, then tap Dispense.';
     $('d-msg').textContent = status.paused ? POUR_MSG.machine_paused : pourMsg;
-
-    const owed = status.slots.filter(hasCredit);
-    $('d-next').innerHTML = owed.length > 1
-      ? '<div class="next-label">Your order</div>' + owed.map((s) => {
-          const pr = products[s.slot - 1];
-          return `<div class="next-item${s.slot === c.slot ? ' is-now' : ''}">
-            <img src="${pr.img}" alt="">${pr.name}${s.armed ? ` × ${s.armed}` : ''}</div>`;
-        }).join('')
-      : '';
+    const finished = allDone && !anyPouring;
+    $('d-done').hidden = !finished;
+    $('d-left').textContent = finished
+      ? 'Everything is dispensed. Thank you!'
+      : sawCredit ? `${unitsLeft} ${unitsLeft === 1 ? 'unit' : 'units'} left to dispense` : 'Unlocking your products…';
   }
 
-  $('d-btn').addEventListener('click', async () => {
-    const btn = $('d-btn');
+  $('d-grid').addEventListener('click', async (e) => {
+    const btn = e.target.closest('.d-btn');
+    if (!btn || btn.disabled || sending) return;
     const act = btn.dataset.act;
     const slot = +btn.dataset.slot;
-    if (!act || sending) return;
+    if (!act) return;
     sending = true;
+    sendingSlot = slot;
     pourMsg = '';
     render();
     const r = await post(`/api/${act}`, { slot });
     sending = false;
+    sendingSlot = 0;
     const result = r.body.result || r.body.error;
     const p = pour[slot];
     if (p && act === 'pause' && result === 'ok') p.pausedLocal = true;
@@ -361,6 +409,7 @@
     pourMsg = result === 'ok' ? '' : (POUR_MSG[result] || '');
     render();
   });
+  $('d-done').addEventListener('click', () => show('thanks'));
 
   // ---- navigation, idle, liveness ------------------------------------------------
   document.addEventListener('click', (e) => {
@@ -374,6 +423,7 @@
     lastMsgAt = Date.now();
     online = data.online;
     status = data.status;
+    if (data.order) order = data.order;
     if (data.prices && Object.keys(data.prices).length) prices = data.prices;
     if (status) trackPours();
     route();

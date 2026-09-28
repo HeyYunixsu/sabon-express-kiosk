@@ -155,15 +155,26 @@ test('cash sale: PIN, price and state rules', async (t) => {
   });
 });
 
-test('dispense starts every paid press, retrying the cooldown', async (t) => {
+test('one tap dispenses exactly one unit, retrying the cooldown', async (t) => {
   const stub = await stubController();
   const k = await startKiosk(stub);
   t.after(() => { k.close(); stub.close(); });
 
-  stub.dispenseReplies = ['cooldown', 'ok', 'ok', 'ok', 'no_credit'];
+  stub.dispenseReplies = ['cooldown', 'ok', 'ok'];
   const r = await k.post('/api/dispense', { slot: 2 });
-  assert.deepStrictEqual(r.body, { result: 'ok', poured: 3 });
-  assert.strictEqual(stub.received.filter((l) => l === 'DISPENSE,2').length, 5);
+  assert.deepStrictEqual(r.body, { result: 'ok', poured: 1 });
+  assert.strictEqual(stub.received.filter((l) => l === 'DISPENSE,2').length, 2);
+});
+
+test('the paid order reaches the page, so it can count units off', async (t) => {
+  const stub = await stubController();
+  const k = await startKiosk(stub);
+  t.after(() => { k.close(); stub.close(); });
+
+  const r = await k.post('/api/cash', { ...sale, pin: '4821' });
+  assert.deepStrictEqual(r.body.order.items, sale.items);
+  const state = await (await fetch(k.url + '/api/state')).json();
+  assert.deepStrictEqual(state.order, { reference: r.body.reference, staff: 'Ana', items: sale.items });
 });
 
 test('dispense with no credit at all is reported, not called success', async (t) => {

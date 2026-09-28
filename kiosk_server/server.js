@@ -95,8 +95,12 @@ function createKioskServer({
 
   // ---- live state to the browser ----------------------------------------
   const streams = new Set();
+  // The order being dispensed: what was bought, so the screen can say "1 of
+  // 2 dispensed". STATUS only knows what is still owed. Held in memory; after
+  // a restart the page rebuilds the order from what STATUS still owes.
+  let order = null;
   function snapshot() {
-    return { online: ctrl.online, status: ctrl.status, prices: ctrl.prices };
+    return { online: ctrl.online, status: ctrl.status, prices: ctrl.prices, order };
   }
   function push() {
     const data = `data: ${JSON.stringify(snapshot())}\n\n`;
@@ -183,7 +187,9 @@ function createKioskServer({
     try { appendJsonl(paymentsLog, record); }
     catch (e) { log(`[kiosk] PAYMENT NOT LOGGED ${JSON.stringify(record)}: ${e.message}`); }
     log(`[kiosk] cash ${record.reference} P${amount} by ${who.name}: ARM_BATCH,${batch}`);
-    json(res, 200, { ok: true, reference: record.reference, staff: who.name, amount });
+    order = { reference: record.reference, staff: who.name, items: items.map(({ slot, qty }) => ({ slot, qty })) };
+    push();
+    json(res, 200, { ok: true, reference: record.reference, staff: who.name, amount, order });
   }
 
   async function slotCommand(req, res, verb) {
@@ -195,8 +201,10 @@ function createKioskServer({
     if (verb === 'DISPENSE') {
       if (dispensing.has(slot)) return json(res, 409, { error: 'already_dispensing' });
       dispensing.add(slot);
+      // One unit per tap, so the customer can count them off and swap
+      // bottles between units.
       try {
-        return json(res, 200, await dispensePaid(ctrl, slot));
+        return json(res, 200, await dispensePaid(ctrl, slot, { maxPresses: 1 }));
       } finally {
         dispensing.delete(slot);
       }

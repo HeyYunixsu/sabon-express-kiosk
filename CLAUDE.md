@@ -180,8 +180,13 @@ not a closed or open socket.
   machine always show the dispense screen, so a reload never hides them.
   There is no "tap to continue" on the attract screen; unused presses expire
   at `ARM_TIMEOUT_SECONDS` into `UNCLAIMED_LOG`.
-- **Dispense Now pours the whole paid quantity** for that product, one
-  `DISPENSE` per press, 250 ms apart to clear the controller's cooldown.
+- **The dispense screen is one card per purchased product**, and each tap on
+  a card's Dispense pours **one unit** (one `DISPENSE`, retried through the
+  controller's 200 ms start cooldown). The card counts units off ("1 of 2
+  dispensed") from STATUS against the order the server remembers, so a reload
+  keeps the count. One product pours at a time; the pouring card's button is
+  Pause/Resume. Done appears when every unit is poured, and the screen
+  finishes by itself 20 s later if nobody taps it.
 - **Staff PINs are salted scrypt** (`STAFFn_PIN_HASH`), not the spec's
   `STAFFn_PIN_SHA256`: an unsalted SHA-256 of a short PIN is cracked
   instantly.
