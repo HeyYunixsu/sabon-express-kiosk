@@ -80,3 +80,12 @@ test('find returns null for an order it never saw', () => {
   const { b } = book();
   assert.strictEqual(b.find('A-9'), null);
 });
+
+test('yesterday\'s closed orders are gone after midnight even before a new order', () => {
+  const { b, at } = book();
+  b.cancel(b.create(items), 'customer');
+  assert.strictEqual(b.closed().length, 1);
+  at(24 * 3600 * 1000);
+  assert.deepStrictEqual(b.closed(), []);
+  assert.strictEqual(b.find('A-1'), null);
+});

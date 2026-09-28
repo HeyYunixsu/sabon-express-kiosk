@@ -15,9 +15,16 @@ function createOrderBook({ letter = 'A', timeoutMs = 180000, now = Date.now, onC
   let waiting = null;
   const closed = [];           // today's closed orders, newest first
 
-  function nextNumber() {
+  // A new day starts a new count and a new list, whether or not anyone has
+  // ordered yet -- the staff tablet asks for "today" all night.
+  function rollDay() {
     const d = dayKey(new Date(now()));
     if (d !== day) { day = d; count = 0; closed.length = 0; }
+    return d;
+  }
+
+  function nextNumber() {
+    const d = rollDay();
     count++;
     return { number: `${letter}-${count}`, reference: `${d}-${letter}-${count}` };
   }
@@ -56,6 +63,7 @@ function createOrderBook({ letter = 'A', timeoutMs = 180000, now = Date.now, onC
     },
     current() { expireIfDue(); return waiting; },
     find(number) {
+      rollDay();
       expireIfDue();
       if (waiting && waiting.number === number) return waiting;
       return closed.find((o) => o.number === number) || null;
@@ -63,7 +71,7 @@ function createOrderBook({ letter = 'A', timeoutMs = 180000, now = Date.now, onC
     paid(o, by) { if (o.status === 'waiting') close(o, 'paid', null, by); },
     cancel(o, reason, by = null) { if (o.status === 'waiting') close(o, 'cancelled', reason, by); },
     expireIfDue,
-    closed() { expireIfDue(); return closed.slice(); },
+    closed() { rollDay(); expireIfDue(); return closed.slice(); },
   };
 }
 
