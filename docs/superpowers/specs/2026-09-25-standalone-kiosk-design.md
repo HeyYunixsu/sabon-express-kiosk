@@ -130,12 +130,17 @@ added, each acknowledged the way `PRIME_ACK` already is:
 
 ```
 DISPENSE,<slot>   consume one armed unit and start the pour
-                  → DISPENSE_ACK,<slot>,<ok|no_credit|busy|empty|offline>
+                  → DISPENSE_ACK,<slot>,<ok|no_credit|empty|max_active|priming|
+                                        machine_paused|slot_paused|cooldown|invalid_slot>
 PAUSE,<slot>      stop the pump, keep the pour open
-                  → PAUSE_ACK,<slot>,<ok|not_pouring>
+                  → PAUSE_ACK,<slot>,<ok|not_pouring|already_paused|invalid_slot>
 RESUME,<slot>     continue the same pour
-                  → RESUME_ACK,<slot>,<ok|not_paused>
+                  → RESUME_ACK,<slot>,<ok|not_paused|invalid_slot>
 ```
+
+*As built:* `busy` is split into its causes so the screen can say why nothing
+poured. There is no `offline`: a controller that is down sends nothing, so the
+kiosk server detects offline from six seconds without a `STATUS` line.
 
 `PumpState` already carries `isPaused`, and the pump loop already switches the
 pump off while it is set (`pump_control.cpp:236`). Two gaps to close:
