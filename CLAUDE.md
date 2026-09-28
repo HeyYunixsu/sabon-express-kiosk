@@ -9,8 +9,14 @@ This repo was started from the cashier product's machine core. What was taken,
 what was left and why is in `docs/REUSE_MAP.md`. The design, and the build
 order below, is `docs/superpowers/specs/2026-09-25-standalone-kiosk-design.md`.
 
-**The goal is a working kiosk a customer can use**, on a 15.6" touchscreen in
-portrait, **1080×1920**. Design every screen for that size.
+**The goal is a working kiosk a customer can use**, on a 15.6" touchscreen
+mounted **landscape, 1920×1080**. Design every screen for that size.
+
+**The look is the cashier's V2 dashboard, made into a kiosk** (owner,
+2026-09-28): V2's header card with status chips and the logo, V2 product tiles
+(photo, badge, red − / green + steppers), the cart panel with Quantity / Total
+Amount and a lock-icon **Unlock**. Keep that identity; change scale and
+layout for a customer's finger (nothing under 72px, main actions 96px+).
 
 ## Status
 
@@ -62,8 +68,8 @@ server and the screens all run on Windows:
 2. `cd controller && mingw32-make`, then run `main.exe` (compiler `bin` first
    on the PATH, as above).
 3. `cd kiosk_server && node server.js`.
-4. Open `http://localhost:3000/`. The page scales its 1080×1920 stage to fit
-   any window, so a tall browser window shows it as the kiosk will.
+4. Open `http://localhost:3000/`. The page scales its 1920×1080 stage to fit
+   any window, so an ordinary browser window shows it as the kiosk will.
 
 Sales land in `transaction/` (nothing uploads them unless the uploaders run)
 and cash payments in `logs/payments.jsonl`.
@@ -180,7 +186,10 @@ not a closed or open socket.
   machine always show the dispense screen, so a reload never hides them.
   There is no "tap to continue" on the attract screen; unused presses expire
   at `ARM_TIMEOUT_SECONDS` into `UNCLAIMED_LOG`.
-- **The dispense screen is one card per purchased product**, and each tap on
+- **Unlock opens a payment choice**: Cash (staff PIN on the next screen) or
+  QR Ph, which shows but is disabled as "Coming soon" until piece 4.
+- **The dispense screen is one card per purchased product**, side by side
+  (up to six in one row), and each tap on
   a card's Dispense pours **one unit** (one `DISPENSE`, retried through the
   controller's 200 ms start cooldown). The card counts units off ("1 of 2
   dispensed") from STATUS against the order the server remembers, so a reload

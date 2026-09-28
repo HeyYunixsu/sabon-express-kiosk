@@ -249,8 +249,10 @@ Each piece is its own spec → plan → implementation cycle.
 
 ## Open questions
 
-- **Touchscreen not chosen.** Size and orientation change every screen layout.
-  Decide before piece 2.
+- ~~**Touchscreen not chosen.**~~ *Settled 2026-09-28:* 15.6", mounted
+  landscape, 1920×1080. The screens keep the cashier V2 dashboard's look
+  (header chips, product tiles, cart panel, lock-icon Unlock) at kiosk scale,
+  and Unlock opens a Cash / QR choice, QR disabled until piece 4.
 - **Backend payment endpoints do not exist yet.** Piece 4 is blocked until they
   do; pieces 0-3 are not.
 - **Hygiene.** Wet hands on a touchscreen all day; the enclosure needs a

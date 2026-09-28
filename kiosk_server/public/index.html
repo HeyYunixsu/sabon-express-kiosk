@@ -7,110 +7,184 @@
   <link rel="stylesheet" href="css/kiosk.css">
 </head>
 <body>
-<!-- One 1080x1920 stage, scaled to fit whatever window it is in. On the kiosk's
-     portrait screen the scale is exactly 1; on a laptop it shrinks to fit, so
-     the same page can be tested anywhere. -->
+<!-- One 1920x1080 landscape stage, scaled to fit the window. On the kiosk's
+     screen the scale is exactly 1; on a laptop it shrinks, so the same page can
+     be tested anywhere. The look is the cashier's V2 dashboard -- header card,
+     product tiles, cart panel, Unlock -- sized for a customer's finger. -->
 <div id="stage">
 
-  <!-- ATTRACT -------------------------------------------------------------->
-  <section class="screen" id="s-attract" data-go="pick">
-    <img class="attract-logo" src="img/sabon-express-logo.png" alt="Sabon Express">
-    <h1 class="attract-title">Fill your own bottle</h1>
-    <p class="attract-sub">Detergent, fabric conditioner and bleach — pay only for what you pour.</p>
-    <div class="attract-shelf" id="attract-shelf"></div>
-    <div class="attract-cta">Tap anywhere to start</div>
-    <p class="attract-foot">Bring your own bottle · Pay with cash to staff</p>
-  </section>
-
-  <!-- PICK ------------------------------------------------------------------>
-  <section class="screen" id="s-pick" hidden>
-    <header class="bar">
-      <img class="bar-logo" src="img/sabon-express-logo.png" alt="">
-      <div class="bar-title">
-        <h2>Choose your products</h2>
-        <p>One press fills one measure. Add as many as you need.</p>
-      </div>
-      <button class="btn-ghost" data-go="attract">Cancel</button>
-    </header>
-    <div class="grid" id="grid"></div>
-    <footer class="total-bar">
-      <div>
-        <div class="total-label" id="pick-count">No products yet</div>
-        <div class="total-amount" id="pick-total">₱0</div>
-      </div>
-      <button class="btn-primary" id="to-pay" disabled>Continue to pay</button>
-    </footer>
-  </section>
-
-  <!-- PAY ------------------------------------------------------------------->
-  <section class="screen" id="s-pay" hidden>
-    <header class="bar">
-      <button class="btn-ghost" data-go="pick">‹ Back</button>
-      <div class="bar-title"><h2>Pay with cash</h2></div>
-      <button class="btn-ghost" data-go="attract">Cancel</button>
-    </header>
-
-    <div class="pay-card">
-      <ul class="summary" id="pay-summary"></ul>
-      <div class="pay-due">
-        <span>Amount to pay</span>
-        <strong id="pay-total">₱0</strong>
-      </div>
-      <p class="pay-note">Hand exactly <b id="pay-total-2">₱0</b> to a staff member.<br>
-        <span>Exact amount only — no change is given.</span></p>
+  <!-- ================== HEADER (every screen but attract) ================== -->
+  <header id="v2-header">
+    <div class="v2-card" id="v2-stats">
+      <span class="v2-chip" id="chip-state">
+        <span class="v2-dot"></span>
+        <span class="v2-chip-v" id="kpi-state">Ready</span>
+      </span>
+      <span class="v2-chip">
+        <span class="v2-chip-k">In stock</span>
+        <span class="v2-chip-sep"></span>
+        <span class="v2-chip-v" id="kpi-stock">6/6</span>
+      </span>
+      <span class="v2-chip">
+        <span class="v2-chip-k">Pay with</span>
+        <span class="v2-chip-sep"></span>
+        <span class="v2-chip-v">Cash</span>
+      </span>
+      <span class="v2-chip v2-chip-brand">
+        <span class="v2-chip-k">Bring your own bottle</span>
+      </span>
     </div>
-
-    <div class="pin-card" id="pin-card">
-      <div class="pin-head">
-        <span class="pin-badge">Staff only</span>
-        <span>Enter your PIN to confirm the cash was received</span>
-      </div>
-      <div class="pin-dots" id="pin-dots"></div>
-      <div class="pin-msg" id="pin-msg" role="alert"></div>
-      <div class="keypad" id="keypad">
-        <button data-k="1">1</button><button data-k="2">2</button><button data-k="3">3</button>
-        <button data-k="4">4</button><button data-k="5">5</button><button data-k="6">6</button>
-        <button data-k="7">7</button><button data-k="8">8</button><button data-k="9">9</button>
-        <button data-k="clear" class="k-alt">Clear</button><button data-k="0">0</button><button data-k="back" class="k-alt">⌫</button>
-      </div>
-      <button class="btn-primary wide" id="confirm-cash" disabled>Confirm payment</button>
+    <div class="v2-card" id="v2-identity">
+      <img class="v2-logo" src="img/sabon-express-logo.png" alt="Sabon Express">
+      <span class="v2-vsep"></span>
+      <span class="v2-clock" id="v2-clock">--:--</span>
     </div>
-    <div class="pin-card is-off" id="cash-off" hidden>
-      <p>Cash payment is not set up on this kiosk yet.<br>Please call a staff member.</p>
-    </div>
-  </section>
+  </header>
 
-  <!-- DISPENSE -------------------------------------------------------------->
-  <!-- One card per purchased product. Each card's button pours ONE unit of
-       that product, so a quantity of 2 is two taps and the card counts them. -->
-  <section class="screen" id="s-dispense" hidden>
-    <div class="modal">
-      <header class="modal-head">
-        <div class="modal-check">✓</div>
-        <div>
-          <h2>Your purchased products</h2>
+  <main id="v2-main">
+
+    <!-- ================== SHOP: products + cart ================== -->
+    <section class="view" id="v-shop">
+      <div class="v2-card" id="v2-products">
+        <div class="v2-panel-head">
+          <h1 class="v2-panel-title">Choose your products</h1>
+          <span class="v2-panel-hint">Tap a product or <b>+</b> to add. One press = one measure.</span>
+        </div>
+        <div id="v2-grid" class="v2-grid"></div>
+      </div>
+
+      <aside class="v2-card" id="v2-cart">
+        <div class="v2-cart-head">
+          <span class="v2-cart-title">
+            <svg class="v2-cart-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="20" r="1.6"/><circle cx="18" cy="20" r="1.6"/><path d="M2 3h2.2l2.4 12.1a1.6 1.6 0 0 0 1.6 1.3h8.9a1.6 1.6 0 0 0 1.6-1.3L21 7H5.2"/></svg>
+            Your Cart
+          </span>
+          <button id="btn-clear" class="v2-btn v2-btn-danger-ghost v2-btn-icon-sm" type="button" aria-label="Clear the cart" hidden>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/><path d="M10 11v6M14 11v6"/></svg>
+          </button>
+        </div>
+        <div id="v2-cart-body">
+          <ul id="v2-cart-list" class="v2-cart-list"></ul>
+          <div id="v2-cart-empty" class="v2-cart-empty">
+            <svg class="v2-empty-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="20" r="1.6"/><circle cx="18" cy="20" r="1.6"/><path d="M2 3h2.2l2.4 12.1a1.6 1.6 0 0 0 1.6 1.3h8.9a1.6 1.6 0 0 0 1.6-1.3L21 7H5.2"/></svg>
+            <p class="v2-empty-title">Your cart is empty</p>
+            <p class="v2-empty-sub">Tap a product to add it</p>
+          </div>
+        </div>
+        <div class="v2-totals">
+          <div class="v2-total-row"><span>Quantity</span><span class="v2-total-v" id="total-items">0</span></div>
+          <div class="v2-total-rule"></div>
+          <div class="v2-total-row"><span>Total Amount</span><span class="v2-total-v v2-total-money" id="total-amount">₱0</span></div>
+        </div>
+        <button id="btn-unlock" class="v2-btn v2-btn-primary v2-btn-xl" type="button" disabled>
+          <svg class="v2-btn-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10.5" width="16" height="10" rx="2.2"/><path d="M8 10.5V7.6a4 4 0 0 1 8 0v2.9"/></svg>
+          Unlock
+        </button>
+      </aside>
+    </section>
+
+    <!-- ================== PAY: choose how ================== -->
+    <section class="view v2-card kiosk-panel" id="v-pay" hidden>
+      <div class="k-head">
+        <button class="v2-btn v2-btn-ghost k-back" data-go="shop" type="button">‹ Back</button>
+        <div class="k-title">
+          <h1>How would you like to pay?</h1>
+          <p>Amount to pay: <b class="k-amount" id="pay-amount">₱0</b> · exact amount only, no change</p>
+        </div>
+      </div>
+      <div class="pay-options">
+        <button class="pay-tile" id="pay-cash" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.6"/><path d="M6 9.5v5M18 9.5v5"/></svg>
+          <span class="pay-name">Cash</span>
+          <span class="pay-desc" id="pay-cash-desc">Hand the exact amount to a staff member</span>
+        </button>
+        <button class="pay-tile" id="pay-qr" type="button" disabled>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3h-3zM20 14v.01M14 20h.01M17 20h4v-3"/></svg>
+          <span class="pay-name">QR Ph</span>
+          <span class="pay-desc">GCash, Maya, ShopeePay and bank apps</span>
+          <span class="pay-soon">Coming soon</span>
+        </button>
+      </div>
+    </section>
+
+    <!-- ================== PIN: staff confirms the cash ================== -->
+    <section class="view v2-card kiosk-panel" id="v-pin" hidden>
+      <div class="k-head">
+        <button class="v2-btn v2-btn-ghost k-back" data-go="pay" type="button">‹ Back</button>
+        <div class="k-title">
+          <h1>Pay with cash</h1>
+          <p>Hand exactly <b class="k-amount" id="pin-amount">₱0</b> to a staff member · no change is given</p>
+        </div>
+      </div>
+      <div class="pin-layout">
+        <div class="pin-order">
+          <ul class="v2-cart-list" id="pin-summary"></ul>
+          <div class="v2-totals">
+            <div class="v2-total-row"><span>Quantity</span><span class="v2-total-v" id="pin-items">0</span></div>
+            <div class="v2-total-rule"></div>
+            <div class="v2-total-row"><span>Total Amount</span><span class="v2-total-v v2-total-money" id="pin-total">₱0</span></div>
+          </div>
+        </div>
+        <div class="pin-pad">
+          <div class="pin-head"><span class="pin-badge">Staff only</span> Enter your PIN to confirm the cash was received</div>
+          <div class="pin-dots" id="pin-dots"></div>
+          <div class="pin-msg" id="pin-msg" role="alert"></div>
+          <div class="keypad" id="keypad">
+            <button data-k="1">1</button><button data-k="2">2</button><button data-k="3">3</button>
+            <button data-k="4">4</button><button data-k="5">5</button><button data-k="6">6</button>
+            <button data-k="7">7</button><button data-k="8">8</button><button data-k="9">9</button>
+            <button data-k="clear" class="k-alt">Clear</button><button data-k="0">0</button><button data-k="back" class="k-alt">⌫</button>
+          </div>
+          <button class="v2-btn v2-btn-primary v2-btn-xl" id="confirm-cash" type="button" disabled>
+            <svg class="v2-btn-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10.5" width="16" height="10" rx="2.2"/><path d="M8 10.5V7.6a4 4 0 0 1 8 0v2.9"/></svg>
+            <span id="confirm-label">Confirm &amp; Unlock</span>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================== DISPENSE: the purchased items ================== -->
+    <!-- A major kiosk screen, not a pop-up: one card per purchased product,
+         side by side. Each tap on a card's button pours ONE unit. -->
+    <section class="view v2-card kiosk-panel" id="v-dispense" hidden>
+      <div class="k-head k-head-center">
+        <div class="k-title">
+          <h1>Your purchased items</h1>
           <p id="d-sub">Place your bottle under the nozzle shown, then tap Dispense.</p>
         </div>
-      </header>
-      <div class="d-grid" id="d-grid"></div>
-      <p class="pour-msg" id="d-msg" role="alert"></p>
-      <footer class="modal-foot">
-        <div class="foot-text" id="d-left"></div>
-        <button class="btn-done" id="d-done" hidden>Done</button>
-      </footer>
+      </div>
+      <div class="d-row" id="d-row"></div>
+      <p class="d-msg" id="d-msg" role="alert"></p>
+      <div class="d-foot">
+        <span class="d-left" id="d-left"></span>
+        <button class="v2-btn v2-btn-primary d-done" id="d-done" type="button" disabled>Done / Finish</button>
+      </div>
+    </section>
+
+    <!-- ================== THANK YOU ================== -->
+    <section class="view v2-card kiosk-panel" id="v-thanks" data-go="attract" hidden>
+      <div class="thanks">
+        <div class="thanks-mark">✓</div>
+        <h1>Thank you!</h1>
+        <p>Please take your bottle. See you again soon.</p>
+      </div>
+    </section>
+  </main>
+
+  <!-- ================== ATTRACT (full screen) ================== -->
+  <section id="attract" data-go="shop">
+    <div class="a-hero">
+      <img class="a-logo" src="img/sabon-express-logo.png" alt="Sabon Express">
+      <h1>Fill your own bottle</h1>
+      <p>Detergent, fabric conditioner and bleach — pay only for what you pour.</p>
+      <div class="a-cta">Tap anywhere to start</div>
     </div>
+    <div class="v2-card a-shelf" id="a-shelf"></div>
   </section>
 
-  <!-- THANK YOU -------------------------------------------------------------->
-  <section class="screen" id="s-thanks" data-go="attract" hidden>
-    <div class="thanks-mark">✓</div>
-    <h1 class="attract-title">Thank you!</h1>
-    <p class="attract-sub">Please take your bottle. See you again soon.</p>
-  </section>
-
-  <!-- OFFLINE (over everything) ---------------------------------------------->
+  <!-- ================== OFFLINE (over everything) ================== -->
   <div class="offline" id="offline" hidden>
-    <div class="offline-card">
+    <div class="v2-card offline-card">
       <div class="offline-dot"></div>
       <h2>Machine not ready</h2>
       <p id="offline-text">Please wait a moment. If this stays, call a staff member.</p>

@@ -1,5 +1,6 @@
 'use strict';
-// Sabon Express kiosk screens: attract -> pick -> pay -> dispense -> thanks.
+// Sabon Express kiosk: attract -> shop -> pay -> pin -> dispense -> thanks.
+// Landscape 1920x1080, in the cashier V2 dashboard's visual language.
 //
 // The dispense screen is driven by the controller, not by this page. Whenever
 // STATUS shows paid presses on the machine, this page shows them -- so a
@@ -7,14 +8,18 @@
 // and there is no "tap to continue" for a stranger on the attract screen.
 
 (() => {
+  const W = 1920;
+  const H = 1080;
   const OFFLINE_MS = 6000;        // silence that means the machine is gone
   const THANKS_MS = 10000;
   const PAUSED_AFTER_MS = 900;    // remaining time frozen this long = paused
   const DONE_AUTO_MS = 20000;     // all dispensed, Done not tapped: finish anyway
+  const MAX_QTY = 20;
 
   const $ = (id) => document.getElementById(id);
   const peso = (n) => '₱' + n;
-  const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 'es'}`;
+  const MINUS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M5 12h14"/></svg>';
+  const PLUS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>';
 
   let products = [];
   let prices = {};
@@ -28,16 +33,17 @@
 
   let screen = '';
   let cart = {};                  // slot -> qty
+  let cartKey = '';
   let pin = '';
   let lastTouch = Date.now();
   let thanksAt = 0;
   let order = null;               // { reference, staff, items } from the server
 
   let sending = false;            // one request at a time from this page
+  let sendingSlot = 0;
   let dispenseEnteredAt = 0;
   let sawCredit = false;
   let doneSince = 0;
-  let sendingSlot = 0;
   let cardsKey = '';
   let pourMsg = '';
   const pour = {};                // slot -> { max, last, changedAt, pausedLocal }
@@ -45,9 +51,9 @@
   // ---- stage scaling ---------------------------------------------------------
   const stage = $('stage');
   function fit() {
-    const s = Math.min(innerWidth / 1080, innerHeight / 1920);
-    stage.style.left = `${(innerWidth - 1080 * s) / 2}px`;
-    stage.style.top = `${(innerHeight - 1920 * s) / 2}px`;
+    const s = Math.min(innerWidth / W, innerHeight / H);
+    stage.style.left = `${(innerWidth - W * s) / 2}px`;
+    stage.style.top = `${(innerHeight - H * s) / 2}px`;
     stage.style.transform = `scale(${s})`;
   }
   addEventListener('resize', fit);
@@ -75,13 +81,27 @@
   const pricesKnown = () => cartItems().every((it) => Number.isInteger(prices[it.slot]));
   const machineReady = () => online && Date.now() - lastMsgAt < OFFLINE_MS;
 
+  function cartRows(items) {
+    return items.map((it) => {
+      const p = products[it.slot - 1];
+      return `<li class="v2-cart-row">
+        <img src="${p.img}" alt="">
+        <span class="v2-cart-name"><b>${p.name}</b><span>${p.ml ? `${p.ml} ml per press · ` : ''}${peso(prices[it.slot] || 0)} each</span></span>
+        <span class="v2-cart-qty">× ${it.qty}</span>
+        <span class="v2-cart-price">${peso((prices[it.slot] || 0) * it.qty)}</span>
+      </li>`;
+    }).join('');
+  }
+
   // ---- screens -----------------------------------------------------------------
+  const VIEWS = ['shop', 'pay', 'pin', 'dispense', 'thanks'];
   function show(name) {
     if (name === screen) return;
     screen = name;
-    for (const el of document.querySelectorAll('.screen')) el.hidden = el.id !== `s-${name}`;
+    $('attract').hidden = name !== 'attract';
+    for (const v of VIEWS) $(`v-${v}`).hidden = v !== name;
     if (name === 'attract') { cart = {}; pin = ''; }
-    if (name === 'pay') { pin = ''; setPinMsg(''); }
+    if (name === 'pin') { pin = ''; setPinMsg(''); }
     if (name === 'dispense') {
       dispenseEnteredAt = Date.now(); sawCredit = false; doneSince = 0; pourMsg = ''; cardsKey = '';
     }
@@ -100,7 +120,7 @@
     }
     if (screen !== 'dispense') return;
     if (sawCredit) {
-      // Everything poured: the Done button is up. If nobody taps it, finish
+      // Everything poured: Done / Finish is live. If nobody taps it, finish
       // anyway so the next customer is not left looking at this order.
       doneSince = doneSince || now;
       if (now - doneSince > DONE_AUTO_MS) show('thanks');
@@ -112,76 +132,124 @@
   function render() {
     $('offline').hidden = machineReady() || (!lastMsgAt && Date.now() - streamOpenedAt < 2000);
     $('offline-text').textContent = screen === 'dispense'
-      ? 'Your paid presses are safe. Please wait — pouring continues when the machine is back.'
+      ? 'Your paid items are safe. Please wait — dispensing continues when the machine is back.'
       : 'Please wait a moment. If this stays, call a staff member.';
+    renderHeader();
     if (screen === 'attract') renderShelf();
-    if (screen === 'pick') renderPick();
+    if (screen === 'shop') renderShop();
     if (screen === 'pay') renderPay();
+    if (screen === 'pin') renderPin();
     if (screen === 'dispense') renderDispense();
   }
 
-  // ---- attract -----------------------------------------------------------------
+  // ---- header (V2 stats + identity) ------------------------------------------
+  function renderHeader() {
+    const chip = $('chip-state');
+    const ready = machineReady();
+    const busy = ready && creditOnMachine();
+    chip.classList.toggle('is-offline', !ready);
+    chip.classList.toggle('is-busy', busy);
+    $('kpi-state').textContent = !ready ? 'Offline' : busy ? 'Dispensing' : 'Ready';
+    const inStock = products.filter((p) => !isOut(p.slot)).length;
+    const k = $('kpi-stock');
+    k.textContent = `${inStock}/${products.length}`;
+    k.className = 'v2-chip-v ' + (inStock === products.length ? 'is-full' : inStock >= 3 ? 'is-low' : 'is-critical');
+    const d = new Date();
+    $('v2-clock').textContent = `${d.getHours() % 12 || 12}:${String(d.getMinutes()).padStart(2, '0')} ${d.getHours() < 12 ? 'AM' : 'PM'}`;
+  }
+
+  // ---- attract -------------------------------------------------------------------
   function renderShelf() {
-    $('attract-shelf').innerHTML = products.map((p) => `
-      <div class="shelf-item${isOut(p.slot) ? ' is-out' : ''}">
-        <img src="${p.img}" alt="">
+    $('a-shelf').innerHTML = products.map((p) => `
+      <div class="a-item${isOut(p.slot) ? ' is-out' : ''}">
+        <div class="a-img"><img src="${p.img}" alt=""></div>
         <div class="n">${p.name}</div>
         <div class="p">${isOut(p.slot) ? 'Out of stock'
           : Number.isInteger(prices[p.slot]) ? `${peso(prices[p.slot])} per press` : '&nbsp;'}</div>
       </div>`).join('');
   }
 
-  // ---- pick ----------------------------------------------------------------------
+  // ---- shop: V2 product tiles + cart --------------------------------------------
   // Built once and updated in place: STATUS arrives twice a second, and
   // rebuilding the buttons under a finger swallows the tap.
   function buildGrid() {
-    $('grid').innerHTML = products.map((p) => `
-      <div class="card" id="card-${p.slot}">
-        <span class="card-flag" hidden>Out of stock</span>
-        <div class="card-img"><img src="${p.img}" alt=""></div>
-        <div class="card-name">${p.name}</div>
-        <div class="card-meta"></div>
-        <div class="stepper">
-          <button class="minus" data-slot="${p.slot}" data-d="-1" aria-label="Less">−</button>
-          <span class="qty">0</span>
-          <button class="plus" data-slot="${p.slot}" data-d="1" aria-label="More">+</button>
+    $('v2-grid').innerHTML = products.map((p) => `
+      <div class="v2-prod" id="card-${p.slot}" data-slot="${p.slot}">
+        <div class="v2-prod-img"><img src="${p.img}" alt=""></div>
+        <span class="v2-badge"><span class="v2-dot"></span><span class="b-txt">Ready</span></span>
+        <div class="v2-prod-text">
+          <div class="v2-prod-name">${p.name}</div>
+          <div class="v2-prod-ml">${p.ml ? `${p.ml} ml per press` : '&nbsp;'}</div>
+          <div class="v2-prod-price"></div>
+        </div>
+        <div class="v2-step-row">
+          <button class="v2-step v2-step-minus" data-slot="${p.slot}" data-d="-1" aria-label="Less">${MINUS}</button>
+          <span class="v2-step-qty">0</span>
+          <button class="v2-step v2-step-plus" data-slot="${p.slot}" data-d="1" aria-label="More">${PLUS}</button>
         </div>
       </div>`).join('');
   }
 
-  function renderPick() {
+  function renderShop() {
     for (const p of products) {
       const card = $(`card-${p.slot}`);
       const out = isOut(p.slot);
       const price = prices[p.slot];
       if (out) delete cart[p.slot];
       const qty = cart[p.slot] || 0;
-      card.classList.toggle('is-out', out);
+      card.classList.toggle('is-empty', out);
       card.classList.toggle('in-cart', qty > 0);
-      card.querySelector('.card-flag').hidden = !out;
-      card.querySelector('.card-meta').innerHTML =
-        `${p.ml ? `${p.ml} ml · ` : ''}<b>${Number.isInteger(price) ? peso(price) : '—'}</b> per press`;
-      card.querySelector('.qty').textContent = qty;
-      card.querySelector('.minus').disabled = qty === 0;
-      card.querySelector('.plus').disabled = out || !Number.isInteger(price) || qty >= 20;
+      const badge = card.querySelector('.v2-badge');
+      badge.className = 'v2-badge' + (out ? ' is-empty' : qty ? ' is-armed' : '');
+      badge.querySelector('.b-txt').textContent = out ? 'Out of stock' : qty ? 'In cart' : 'Ready';
+      card.querySelector('.v2-prod-price').innerHTML =
+        Number.isInteger(price) ? `${peso(price)} <small>per press</small>` : '&nbsp;';
+      card.querySelector('.v2-step-qty').textContent = qty;
+      card.querySelector('.v2-step-minus').disabled = qty === 0;
+      card.querySelector('.v2-step-plus').disabled = out || !Number.isInteger(price) || qty >= MAX_QTY;
     }
-    const n = cartCount();
-    $('pick-count').textContent = n ? `${n} press${n === 1 ? '' : 'es'}` : 'No products yet';
-    $('pick-total').textContent = peso(cartTotal());
-    $('to-pay').disabled = n === 0 || !pricesKnown() || !machineReady();
+    const items = cartItems();
+    const key = items.map((i) => `${i.slot}:${i.qty}`).join(',') + '|' + JSON.stringify(prices);
+    if (key !== cartKey) {
+      cartKey = key;
+      $('v2-cart-list').innerHTML = cartRows(items);
+    }
+    $('v2-cart-empty').hidden = items.length > 0;
+    $('btn-clear').hidden = items.length === 0;
+    $('total-items').textContent = cartCount();
+    $('total-amount').textContent = peso(cartTotal());
+    $('btn-unlock').disabled = items.length === 0 || !pricesKnown() || !machineReady();
   }
 
-  $('grid').addEventListener('click', (e) => {
-    const b = e.target.closest('button[data-slot]');
-    if (!b || b.disabled) return;
-    const slot = +b.dataset.slot;
-    const qty = Math.max(0, Math.min(20, (cart[slot] || 0) + +b.dataset.d));
+  function changeQty(slot, d) {
+    const price = prices[slot];
+    if (d > 0 && (isOut(slot) || !Number.isInteger(price))) return;
+    const qty = Math.max(0, Math.min(MAX_QTY, (cart[slot] || 0) + d));
     if (qty) cart[slot] = qty; else delete cart[slot];
-    renderPick();
-  });
-  $('to-pay').addEventListener('click', () => show('pay'));
+    renderShop();
+  }
 
-  // ---- pay -----------------------------------------------------------------------
+  $('v2-grid').addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-d]');
+    if (b) { if (!b.disabled) changeQty(+b.dataset.slot, +b.dataset.d); return; }
+    // The whole tile is a target too: a customer taps the bottle they want.
+    const card = e.target.closest('.v2-prod');
+    if (card) changeQty(+card.dataset.slot, 1);
+  });
+  $('btn-clear').addEventListener('click', () => { cart = {}; renderShop(); });
+  $('btn-unlock').addEventListener('click', () => show('pay'));
+
+  // ---- pay: choose cash or QR ------------------------------------------------------
+  function renderPay() {
+    $('pay-amount').textContent = peso(cartTotal());
+    $('pay-cash').disabled = !cashReady || !machineReady();
+    $('pay-cash-desc').textContent = cashReady
+      ? 'Hand the exact amount to a staff member'
+      : 'Not set up on this kiosk — please call staff';
+  }
+  $('pay-cash').addEventListener('click', () => show('pin'));
+
+  // ---- pin: staff confirm the cash ---------------------------------------------------
   function setPinMsg(text, shake) {
     $('pin-msg').textContent = text;
     if (shake) {
@@ -190,19 +258,16 @@
     }
   }
 
-  function renderPay() {
-    $('pay-summary').innerHTML = cartItems().map((it) => {
-      const p = products[it.slot - 1];
-      return `<li><span>${p.name} × ${it.qty}</span><span>${peso((prices[it.slot] || 0) * it.qty)}</span></li>`;
-    }).join('');
-    $('pay-total').textContent = $('pay-total-2').textContent = peso(cartTotal());
-    $('pin-card').hidden = !cashReady;
-    $('cash-off').hidden = cashReady;
+  function renderPin() {
+    const items = cartItems();
+    $('pin-summary').innerHTML = cartRows(items);
+    $('pin-amount').textContent = $('pin-total').textContent = peso(cartTotal());
+    $('pin-items').textContent = cartCount();
     const slots = Math.max(4, pin.length);
     $('pin-dots').innerHTML = Array.from({ length: slots }, (_, i) =>
       `<i class="${i < pin.length ? 'on' : ''}"></i>`).join('');
     $('confirm-cash').disabled = pin.length < 4 || sending || !machineReady();
-    $('confirm-cash').textContent = sending ? 'Checking…' : 'Confirm payment';
+    $('confirm-label').textContent = sending ? 'Checking…' : 'Confirm & Unlock';
   }
 
   $('keypad').addEventListener('click', (e) => {
@@ -213,13 +278,13 @@
     else if (key === 'back') pin = pin.slice(0, -1);
     else if (pin.length < 8) pin += key;
     setPinMsg('');
-    renderPay();
+    renderPin();
   });
 
   $('confirm-cash').addEventListener('click', async () => {
     if (sending || pin.length < 4) return;
     sending = true;
-    renderPay();
+    renderPin();
     const r = await post('/api/cash', { items: cartItems(), amount: cartTotal(), pin });
     sending = false;
     pin = '';
@@ -235,16 +300,16 @@
     else if (e === 'empty') {
       const p = products[(r.body.slot || 1) - 1];
       setPinMsg(`Sorry, ${p.name} just ran out. Please change the order.`);
-      setTimeout(() => { if (screen === 'pay') show('pick'); }, 2500);
+      setTimeout(() => { if (screen === 'pin') show('shop'); }, 2500);
     }
     else if (e === 'machine_busy') setPinMsg('The machine is still finishing an order. Please wait.');
-    else if (e === 'no_staff') cashReady = false;
+    else if (e === 'no_staff') { cashReady = false; show('pay'); return; }
     else if (e === 'no_prices') setPinMsg('Prices are still loading. Please wait a moment.');
     else setPinMsg('The machine is not ready. Nothing was charged — please try again.');
-    renderPay();
+    renderPin();
   });
 
-  // ---- dispense: one card per purchased product ------------------------------
+  // ---- dispense: the purchased items, side by side ------------------------------
   function trackPours() {
     const now = Date.now();
     for (const s of status.slots) {
@@ -284,24 +349,21 @@
     return { s, qty, pouring: !!s.busy, done: sawCredit ? qty - left - pouring : 0 };
   }
 
-  // Built once per order and updated in place, so a tap is never lost to a
-  // rebuild under the finger.
   function buildCards(items) {
     const key = items.map((i) => `${i.slot}:${i.qty}`).join(',');
     if (key === cardsKey) return;
     cardsKey = key;
-    const grid = $('d-grid');
-    grid.classList.toggle('one', items.length === 1);
-    grid.classList.toggle('many', items.length > 4);
-    grid.innerHTML = items.map((i) => {
+    const row = $('d-row');
+    row.classList.toggle('many', items.length > 4);
+    row.innerHTML = items.map((i) => {
       const p = products[i.slot - 1];
       return `<div class="d-card" id="dc-${i.slot}">
         <div class="d-img"><img src="${p.img}" alt=""></div>
         <div class="d-nozzle">Nozzle ${i.slot}</div>
         <h3 class="d-name">${p.name}</h3>
         <div class="d-qty"></div>
+        <div class="d-count"></div>
         <div class="d-pips"></div>
-        <div class="d-status"></div>
         <div class="d-bar"><i></i></div>
         <button class="d-btn" data-slot="${i.slot}">DISPENSE</button>
       </div>`;
@@ -314,10 +376,10 @@
     max_active: 'Please wait — another nozzle is still pouring.',
     priming: 'This nozzle is being cleaned. Please try again in a moment.',
     machine_paused: 'The machine has been paused by staff. Please wait.',
-    slot_paused: 'Tap Resume to continue.',
+    slot_paused: 'Tap to resume.',
     cooldown: 'Please tap again.',
     timeout: 'The machine did not answer. Please tap again.',
-    offline: 'The machine is not ready. Your paid presses are safe.',
+    offline: 'The machine is not ready. Your paid items are safe.',
   };
 
   function renderDispense() {
@@ -345,37 +407,36 @@
 
       card.querySelector('.d-qty').textContent =
         `Quantity: ${u.qty}${prod.ml ? ` · ${prod.ml} ml each` : ''}`;
+      card.querySelector('.d-count').textContent =
+        !sawCredit ? 'Unlocking…'
+        : u.s.empty && !complete && !u.pouring ? 'Out of stock — call staff'
+        : `${u.done} / ${u.qty} dispensed${complete ? ' ✓' : ''}`;
       card.querySelector('.d-pips').innerHTML = u.qty <= 12
         ? Array.from({ length: u.qty }, (_, i) =>
             `<i class="${i < u.done ? 'done' : i === u.done && u.pouring ? 'now' : ''}"></i>`).join('')
         : '';
-      card.querySelector('.d-status').textContent =
-        !sawCredit ? 'Unlocking…'
-        : complete ? '✓ Dispensed'
-        : paused ? `Paused · unit ${u.done + 1} of ${u.qty}`
-        : u.pouring ? `Dispensing unit ${u.done + 1} of ${u.qty}…`
-        : u.s.empty ? 'Out of stock — please call staff'
-        : `${u.done} of ${u.qty} dispensed`;
 
       const p = pour[item.slot];
       const pct = u.pouring && p && p.max ? Math.round(100 * (1 - u.s.remainingMs / p.max)) : 0;
       card.querySelector('.d-bar i').style.width = `${pct}%`;
 
+      // DISPENSE -> DISPENSING... -> DISPENSED ✓. While pouring, the same
+      // button pauses and resumes, so the customer never has to look for it.
       const btn = card.querySelector('.d-btn');
       let act = '';
-      let label = 'PLEASE WAIT';
+      let html = 'PLEASE WAIT';
       let cls = 'd-btn';
-      if (sending && sendingSlot === item.slot) label = 'STARTING…';
-      else if (!sawCredit) label = 'PLEASE WAIT';
-      else if (u.pouring && paused) { act = 'resume'; label = 'RESUME'; cls += ' is-resume'; }
-      else if (u.pouring) { act = 'pause'; label = 'PAUSE'; cls += ' is-pause'; }
-      else if (complete) { label = 'COMPLETED'; cls += ' is-done'; }
-      else if (u.s.empty) label = 'CALL STAFF';
-      else if (!anyPouring && !sending) { act = 'dispense'; label = u.done ? 'DISPENSE NEXT' : 'DISPENSE'; }
+      if (sending && sendingSlot === item.slot) html = 'STARTING…';
+      else if (!sawCredit) html = 'PLEASE WAIT';
+      else if (u.pouring && paused) { act = 'resume'; html = 'PAUSED<small>Tap to resume</small>'; cls += ' is-paused'; }
+      else if (u.pouring) { act = 'pause'; html = 'DISPENSING…<small>Tap to pause</small>'; cls += ' is-pouring'; }
+      else if (complete) { html = 'DISPENSED ✓'; cls += ' is-done'; }
+      else if (u.s.empty) html = 'CALL STAFF';
+      else if (!anyPouring && !sending) { act = 'dispense'; html = u.done ? 'DISPENSE NEXT' : 'DISPENSE'; }
       btn.dataset.act = act;
       btn.disabled = !act;
       btn.className = cls;
-      btn.textContent = label;
+      if (btn.innerHTML !== html) btn.innerHTML = html;
     }
 
     $('d-sub').textContent = order && order.staff
@@ -383,13 +444,13 @@
       : 'Place your bottle under the nozzle shown, then tap Dispense.';
     $('d-msg').textContent = status.paused ? POUR_MSG.machine_paused : pourMsg;
     const finished = allDone && !anyPouring;
-    $('d-done').hidden = !finished;
+    $('d-done').disabled = !finished;
     $('d-left').textContent = finished
-      ? 'Everything is dispensed. Thank you!'
-      : sawCredit ? `${unitsLeft} ${unitsLeft === 1 ? 'unit' : 'units'} left to dispense` : 'Unlocking your products…';
+      ? 'Everything is dispensed.'
+      : sawCredit ? `${unitsLeft} ${unitsLeft === 1 ? 'unit' : 'units'} left to dispense` : 'Unlocking your items…';
   }
 
-  $('d-grid').addEventListener('click', async (e) => {
+  $('d-row').addEventListener('click', async (e) => {
     const btn = e.target.closest('.d-btn');
     if (!btn || btn.disabled || sending) return;
     const act = btn.dataset.act;
@@ -441,7 +502,7 @@
     const now = Date.now();
     // An open stream that has gone quiet never fires onerror, so rebuild it.
     if (now - lastMsgAt > OFFLINE_MS && now - streamOpenedAt > OFFLINE_MS) openStream();
-    if ((screen === 'pick' || screen === 'pay') && now - lastTouch > idleSeconds * 1000) show('attract');
+    if (['shop', 'pay', 'pin'].includes(screen) && now - lastTouch > idleSeconds * 1000) show('attract');
     if (screen === 'thanks' && now - thanksAt > THANKS_MS) show('attract');
     route();
     render();
