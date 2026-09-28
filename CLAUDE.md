@@ -12,7 +12,7 @@ order below, is `docs/superpowers/specs/2026-09-25-standalone-kiosk-design.md`.
 **The goal is a working kiosk a customer can use**, on a 15.6" touchscreen
 mounted **landscape, 1920×1080**. Design every screen for that size.
 
-**The look is the cashier's V2 dashboard, made into a kiosk** (owner,
+**The look is the cashier's V2 dashboard, made into a kiosk, in black and blue** (owner,
 2026-09-28): V2's header card with status chips and the logo, V2 product tiles
 (photo, badge, red − / green + steppers), the cart panel with Quantity / Total
 Amount and a lock-icon **Unlock**. Keep that identity; change scale and
