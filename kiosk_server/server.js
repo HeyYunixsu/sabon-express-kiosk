@@ -684,8 +684,9 @@ function createKioskServer({
 
   const server = http.createServer((req, res) => {
     const url = req.url.split('?')[0];
-    // From the shop Wi-Fi, the staff page and its pictures only. Everything
-    // that orders, unlocks or pours answers the Pi itself and nobody else.
+    // From the shop Wi-Fi: the staff page (STAFF_TABLET), the QR demo's pay
+    // page (QR_DEMO) and their pictures, nothing else. Everything the kiosk
+    // itself orders, unlocks or pours with answers the Pi alone.
     if (!isLocal(req) && !lanAllowed(url, { staff: staffTablet, pay: qrDemo })) { res.writeHead(403); return res.end('Forbidden'); }
     if (url === '/pay' || url.startsWith('/pay/')) return payRoutes(req, res, url);
     if (url === '/staff' || url.startsWith('/staff/')) return staffRoutes(req, res, url);
