@@ -81,7 +81,12 @@ function createKioskServer({
   }
   const idleSeconds = parseInt(config.KIOSK_IDLE_S || '60', 10) || 60;
   const staffTablet = config.STAFF_TABLET === '1';
-  const letter = /^[A-Z]$/.test(config.KIOSK_LETTER || '') ? config.KIOSK_LETTER : 'A';
+  const letterRaw = (config.KIOSK_LETTER || '').trim().toUpperCase();
+  const letterValid = /^[A-Z]$/.test(letterRaw);
+  const letter = letterValid ? letterRaw : 'A';
+  if (letterRaw && !letterValid) {
+    log(`[kiosk] KIOSK_LETTER "${letterRaw}" is not a single letter A-Z - using A`);
+  }
   const timeoutMs = orderTimeoutMs || clampInt(config.ORDER_PAY_TIMEOUT_S, 60, 900, 180) * 1000;
 
   // A record that cannot be written must not break the sale in front of the
