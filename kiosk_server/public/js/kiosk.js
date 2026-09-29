@@ -33,6 +33,7 @@
   let online = false;
   let cashReady = false;
   let staffTablet = false;
+  let qrDemo = false;
   let staffBase = null;
   let idleSeconds = 60;
   let lastMsgAt = 0;
@@ -144,7 +145,7 @@
     // put it back on screen rather than strand it.
     if (pending && !myOrder && ['attract', 'shop', 'pay'].includes(screen)) {
       myOrder = pending.number;
-      show(staffTablet ? 'order' : 'pin');
+      show(staffTablet || pending.method === 'qr' ? 'order' : 'pin');
       return;
     }
     // Our order stopped waiting. Paid shows up as credit (above); anything
@@ -291,6 +292,12 @@
     $('pay-cash-desc').textContent = !cashReady
       ? 'Not set up on this kiosk — please call staff'
       : staffTablet ? 'Pay at the counter' : 'Hand the exact amount to a staff member';
+    // QR Ph is a demo for now (QR_DEMO = 1): the phone that scans the code
+    // reaches this Pi over the Wi-Fi, so no Wi-Fi address means no QR.
+    $('pay-qr').disabled = !qrDemo || !staffBase || !machineReady() || sending;
+    $('pay-qr-soon').hidden = qrDemo;
+    $('pay-qr-desc').textContent = !qrDemo ? 'GCash, Maya, ShopeePay and bank apps'
+      : staffBase ? 'Scan with your phone (demo)' : 'Needs Wi-Fi';
   }
 
   const PAY_MSG = {
@@ -299,20 +306,22 @@
     order_waiting: 'Another order is waiting for payment. Please wait a moment.',
     offline: 'The machine is not ready. Please try again in a moment.',
     no_prices: 'Prices are still loading. Please wait a moment.',
+    no_network: 'The kiosk is not on Wi-Fi, so QR payment is not available. Please pay with cash.',
+    qr_off: 'QR payment is not available yet. Please pay with cash.',
   };
 
-  $('pay-cash').addEventListener('click', async () => {
+  async function startOrder(method) {
     if (sending) return;
     sending = true;
     renderPay();
-    const r = await post('/api/order', { items: cartItems(), amount: cartTotal() });
+    const r = await post('/api/order', { items: cartItems(), amount: cartTotal(), method });
     sending = false;
     if (r.code === 200) {
       pending = r.body.order;
       pendingSeenAt = Date.now();
       myOrder = pending.number;
       endedAt = 0;
-      show(staffTablet ? 'order' : 'pin');
+      show(method === 'qr' || staffTablet ? 'order' : 'pin');
       return;
     }
     const e = r.body.error;
@@ -324,7 +333,9 @@
       $('pay-msg').textContent = PAY_MSG[e] || PAY_MSG.offline;
     }
     renderPay();
-  });
+  }
+  $('pay-cash').addEventListener('click', () => startOrder('cash'));
+  $('pay-qr').addEventListener('click', () => startOrder('qr'));
 
   // ---- order: pay at the counter ------------------------------------------------
   const ENDED = {
@@ -343,7 +354,7 @@
     $('o-foot').hidden = ended;
     $('o-lead').hidden = ended;
     $('o-ended').hidden = !ended;
-    $('o-title').textContent = ended ? `Order ${myOrder || ''}` : 'Pay at the counter';
+    if (ended) $('o-title').textContent = `Order ${myOrder || ''}`;
     if (ended) {
       const c = lastClosed && lastClosed.number === myOrder ? lastClosed : null;
       const key = !c ? 'gone' : c.status === 'expired' ? 'expired' : (c.reason || 'gone');
@@ -354,6 +365,16 @@
     }
     const o = myPending();
     if (!o) return;
+    const qr = o.method === 'qr';
+    $('o-title').textContent = qr ? 'Scan to pay' : 'Pay at the counter';
+    const lead = qr
+      ? 'Scan the code with your phone camera and pay exactly <b class="k-amount" id="o-amount"></b>.'
+      : 'Go to the counter and pay exactly <b class="k-amount" id="o-amount"></b>. Staff will unlock the machine for you.';
+    if ($('o-lead').dataset.kind !== (qr ? 'qr' : 'cash')) {
+      $('o-lead').dataset.kind = qr ? 'qr' : 'cash';
+      $('o-lead').innerHTML = lead;
+    }
+    $('o-staff').hidden = qr;   // a QR order is never confirmed as cash
     $('o-amount').textContent = peso(o.amount);
     $('o-total').textContent = peso(o.amount);
     $('o-number').textContent = o.number;
@@ -363,12 +384,13 @@
       const canQr = !!staffBase && typeof qrcode === 'function';
       if (canQr) {
         const q = qrcode(0, 'M');
-        q.addData(`${staffBase}/staff/order/${o.number}`);
+        q.addData(qr ? `${staffBase}/pay/${o.number}` : `${staffBase}/staff/order/${o.number}`);
         q.make();
         $('o-qr').innerHTML = q.createSvgTag({ cellSize: 4, margin: 0, scalable: true });
       }
       $('o-qr').hidden = !canQr;
       $('o-hint').hidden = !canQr;
+      $('o-hint').textContent = qr ? 'DEMO — no real money is taken.' : 'Or show staff a photo of this code.';
     }
     const left = Math.max(0, o.remainingMs - (Date.now() - pendingSeenAt));
     const s = Math.ceil(left / 1000);
@@ -694,6 +716,7 @@
       idleSeconds = s.idleSeconds;
       cashReady = s.cashReady;
       staffTablet = !!s.staffTablet;
+      qrDemo = !!s.qrDemo;
       staffBase = s.staffBase || null;
       buildGrid();
       show('attract');
