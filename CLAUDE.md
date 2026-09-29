@@ -25,7 +25,7 @@ layout for a customer's finger (nothing under 72px, main actions 96px+).
 | 1 | Controller `DISPENSE`, `PAUSE`, `RESUME` | **Done**, tested |
 | 2 | Kiosk server and customer screens, cash only | **Done**, tested end to end against the real controller; not yet on a Pi |
 | 3 | Counter cash + staff tablet: stage 1 (orders, mark paid) and stage 2 (staff tools) | **Done** — `docs/superpowers/specs/2026-09-28-counter-cash-design.md` |
-| 4 | QR payment | Blocked: backend payment endpoints do not exist yet |
+| 4 | QR payment | Blocked: backend payment endpoints do not exist yet. A pretend version for demos exists behind `QR_DEMO = 1` (`docs/superpowers/specs/2026-09-29-qr-demo-design.md`) |
 | 5 | Install runbook for a kiosk Pi | Last |
 
 Each piece gets its own spec, plan and implementation.
@@ -159,7 +159,7 @@ not a closed or open socket.
    message. `CONFIG/config.env.sample` is the tracked template.
 3. **The kiosk never decides that a payment succeeded.** It asks the backend,
    which is the only side the payment provider talks to. The Pi holds no
-   payment keys.
+   payment keys. The one exception is the demo switch `QR_DEMO = 1`, which pretends; it must never be on in a real shop.
 4. **Exact payment only.** No change, no top-up, no balance held for the
    customer.
 5. **One sale record per press.** Five presses write five files.
@@ -225,6 +225,11 @@ not a closed or open socket.
 - **Waiting credits have no id from the controller.** `lib/logs.js` uses
   `date_created|slot|qty`; a credit is settled by a `credit_give_back` or
   `credit_write_off` event naming it, and the list looks back 7 days.
+- **The QR demo is an order with `method: 'qr'`.** With `QR_DEMO = 1` the QR
+  Ph tile creates it, the QR points a phone at `/pay/<number>` on the Pi's
+  Wi-Fi address, and the phone's Pay runs `confirmPaid()` (logged
+  `qr_demo`). A QR order cannot be paid as cash and a cash order cannot be
+  paid through `/pay`; `/pay` does not exist with the switch off.
 
 ## Known traps
 

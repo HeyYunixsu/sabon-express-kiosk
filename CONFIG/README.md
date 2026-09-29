@@ -52,6 +52,7 @@ controller and the uploader read them relative to their own folders.
 | `STAFF_TABLET` | `0` | `1` = customers pay cash at the counter and staff mark orders paid at `http://<pi>:<KIOSK_PORT>/staff` on the shop Wi-Fi. Only that page answers the Wi-Fi |
 | `ORDER_PAY_TIMEOUT_S` | `180` | Seconds an order waits for payment before it expires. Clamped 60–900 |
 | `KIOSK_LETTER` | `A` | Letter in front of order numbers (`A-27`); one per kiosk in a shop |
+| `QR_DEMO` | `0` | `1` = a pretend QR Ph payment for demos: the phone that scans the kiosk's QR taps Pay and the machine unlocks. No money moves; payments are logged as `qr_demo`. Never on in a real shop |
 
 ### Staff (cash confirmation)
 
