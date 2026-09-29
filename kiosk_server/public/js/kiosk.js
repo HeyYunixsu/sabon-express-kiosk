@@ -151,7 +151,14 @@
     // else gets a short explanation, then the start screen.
     if (myOrder && !endedAt && !myPending() && (screen === 'order' || screen === 'pin')) {
       const closed = lastClosed && lastClosed.number === myOrder ? lastClosed : null;
-      if (!closed || closed.status !== 'paid') { endedAt = now; show('order'); render(); }
+      if (closed && closed.status === 'paid') {
+        // Paid normally shows up as credit (above). If the ARM never lands
+        // (a lost message), this is the only way off a frozen wait screen:
+        // dispense's own 8s "could not be unlocked" message covers it.
+        show('dispense');
+      } else {
+        endedAt = now; show('order'); render();
+      }
     }
     if (endedAt && now - endedAt > ENDED_MS) { endedAt = 0; show('attract'); return; }
     if (screen !== 'dispense') return;
