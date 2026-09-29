@@ -128,3 +128,67 @@ test('GET /staff/api/orders: last 7 days, newest first, signed in only', async (
   assert.deepStrictEqual(r.body.orders.map((o) => [o.number, o.closed.slice(0, 10)]), [['A-4', day(0)], ['A-3', day(1)], ['A-2', day(6)]]);
   assert.strictEqual(r.body.orders[0].method, 'cash');
 });
+
+// Item 1: an order left waiting (never paid or cancelled) when the process
+// dies leaves no closed row in orders.jsonl -- lastNumber must still see its
+// number, or a restart hands it out again to the next customer.
+test('an order still waiting at a restart is not renumbered', async (t) => {
+  const stub = await stubController();
+  t.after(() => stub.close());
+  const k1 = await startKiosk(stub);
+  const first = await k1.post('/api/order', { items: [{ slot: 1, qty: 1 }], amount: 5 });
+  assert.strictEqual(first.code, 200);
+  assert.strictEqual(first.body.order.number, 'A-1');   // still waiting: never paid, never cancelled
+  k1.close();
+
+  const k2 = await startKiosk(stub, { dir: k1.dir });
+  t.after(() => k2.close());
+  const second = await k2.post('/api/order', { items: [{ slot: 1, qty: 1 }], amount: 5 });
+  assert.strictEqual(second.code, 200);
+  assert.strictEqual(second.body.order.number, 'A-2');
+});
+
+// Item 2: staffState() is polled once a second by every open staff page --
+// dashboardStats() and todaySummary() must not re-scan the whole log on every
+// poll, but the numbers must still be right the instant a new order closes.
+test('stats stay correct after a new order closes (the memo invalidates)', async (t) => {
+  const { stub, k, headers } = await kiosk(t);
+  const before = await state(k, headers);
+  assert.deepStrictEqual([before.today.paid, before.today.total, before.stats.today.paid], [0, 0, 0]);
+
+  const { body } = await k.post('/api/order', { items: [{ slot: 1, qty: 1 }], amount: 5 });
+  const r = await k.post('/api/order/pin', { number: body.order.number, pin: '4821' });
+  assert.strictEqual(r.code, 200);
+  await until(() => stub.received.some((l) => l.startsWith('ARM')));
+
+  const after = await state(k, headers);
+  assert.deepStrictEqual([after.today.paid, after.today.total, after.stats.today.paid], [1, 5, 1]);
+});
+
+// Item 3: the table caps at 200 rows, but the 7-day totals must not -- a
+// busy week must not under-report once it passes the cap.
+test('GET /staff/api/orders: totals cover the full window, not the 200-row cap', async (t) => {
+  const { k, headers } = await kiosk(t);
+  const ord = (n, status, method) => ({
+    reference: `${day(0).replace(/-/g, '')}-A-${n}`, amount: 5, status, method,
+    by: status === 'paid' ? 'Ana' : null, closed: `${day(0)} 12:00:00`,
+  });
+  const rows = [];
+  for (let i = 1; i <= 205; i++) rows.push(ord(i, 'paid'));
+  rows.push(ord(206, 'paid', 'qr'));
+  rows.push(ord(207, 'cancelled'));
+  writeRows(k, 'logs/orders.jsonl', rows);
+  const r = await k.get('/staff/api/orders', headers);
+  assert.strictEqual(r.code, 200);
+  assert.strictEqual(r.body.orders.length, 200);   // the table still caps
+  assert.deepStrictEqual(r.body.totals, { orders: 207, paid: 205, cash: 205 * 5 });
+});
+
+// Item 4: the Pi's clock decides "today", not whatever device is looking at
+// the dashboard.
+test('staffState carries the day and hour, for the page\'s own clock', async (t) => {
+  const { k, headers } = await kiosk(t);
+  const s = await state(k, headers);
+  assert.strictEqual(s.day, day(0));
+  assert.strictEqual(s.hour, new Date().getHours());
+});

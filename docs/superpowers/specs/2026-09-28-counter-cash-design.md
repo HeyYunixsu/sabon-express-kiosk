@@ -170,7 +170,7 @@ All under `logs/`. The six sales fields sent to the cloud do not change.
 | File | One line per | Fields |
 |---|---|---|
 | `payments.jsonl` (exists) | cash payment | `reference` (`20260928-A-27`), `method` `cash`, `amount`, `items` (`1:2,3:1`), `staff`, `via` (`tablet` / `kiosk_pin`), `date_created` |
-| `orders.jsonl` (new) | order, when it closes | `reference`, `items`, `amount`, `status` (`paid` / `expired` / `cancelled`), `reason`, `by`, `created`, `closed` |
+| `orders.jsonl` (new) | order, when it is created (`status: created`, no `closed`) and when it closes | `reference`, `method`, `created`, then on close also `items`, `amount`, `status` (`paid` / `expired` / `cancelled`), `reason`, `by`, `closed` |
 | `staff_events.jsonl` (new; replaces `pin_lockouts.jsonl`) | staff action | `event` (`sign_in`, `sign_out`, `pin_locked`, `price_change`, `prime`, `credit_give_back`, `credit_write_off`), `staff`, details, `date_created` |
 
 Dates are `YYYY-MM-DD HH:MM:SS`, local time, as everywhere else.

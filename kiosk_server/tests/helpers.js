@@ -84,19 +84,23 @@ function stubController() {
 // called with the temp dir before the server starts accepting connections,
 // so a test can seed a log file as if it were already there from before a
 // restart -- the order book's day is rolled off the first STATUS tick, which
-// can arrive before a post-start write would land.
-async function startKiosk(stub, { config = [], host = '127.0.0.1', orderTimeoutMs, preListen } = {}) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kiosk-'));
-  fs.mkdirSync(path.join(dir, 'CONFIG'));
-  fs.writeFileSync(path.join(dir, 'CONFIG', 'config.env'), [
-    `SOCKET_PORT = ${stub.port}`,
-    'PRODUCT1_NAME = Detergent 1',
-    'STAFF1_NAME = Ana',
-    `STAFF1_PIN_HASH = ${hashPin('4821')}`,
-    'STAFF2_NAME = Ben',
-    `STAFF2_PIN_HASH = ${hashPin('7777')}`,
-    ...config,
-  ].join('\n'));
+// can arrive before a post-start write would land. dir: reuse an existing
+// kiosk's directory (its config.env, its logs/) to start a second server on
+// it -- a restart, without a second mkdtemp/config write.
+async function startKiosk(stub, { config = [], host = '127.0.0.1', orderTimeoutMs, preListen, dir } = {}) {
+  if (!dir) {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kiosk-'));
+    fs.mkdirSync(path.join(dir, 'CONFIG'));
+    fs.writeFileSync(path.join(dir, 'CONFIG', 'config.env'), [
+      `SOCKET_PORT = ${stub.port}`,
+      'PRODUCT1_NAME = Detergent 1',
+      'STAFF1_NAME = Ana',
+      `STAFF1_PIN_HASH = ${hashPin('4821')}`,
+      'STAFF2_NAME = Ben',
+      `STAFF2_PIN_HASH = ${hashPin('7777')}`,
+      ...config,
+    ].join('\n'));
+  }
   if (preListen) preListen(dir);
   const k = createKioskServer({
     root: dir,

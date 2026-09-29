@@ -160,11 +160,15 @@ function createKioskServer({
     letter,
     timeoutMs,
     // After a restart, carry on today's numbering from the orders log, so a
-    // reference is never used twice in one day.
-    lastNumber: (d) => readJsonl(ordersLog).reduce((max, o) => {
-      const m = String(o.reference || '').match(new RegExp(`^${d}-${letter}-(\\d+)$`));
-      return m ? Math.max(max, Number(m[1])) : max;
-    }, 0),
+    // reference is never used twice in one day -- including an order that
+    // was still waiting when the process died (see the "created" row below).
+    lastNumber: (d) => {
+      const re = new RegExp(`^${d}-${letter}-(\\d+)$`);   // built once per call, not per row
+      return readJsonl(ordersLog).reduce((max, o) => {
+        const m = re.exec(String(o.reference || ''));
+        return m ? Math.max(max, Number(m[1])) : max;
+      }, 0);
+    },
     onClose: (o) => {
       record(ordersLog, {
         reference: o.reference, method: o.method, items: itemsText(o.items), amount: o.amount,
@@ -338,6 +342,13 @@ function createKioskServer({
     if (p.code) return json(res, p.code, p.body);
     if (body.amount !== p.amount) return json(res, 409, { error: 'price_changed', amount: p.amount });
     const o = orders.create(p.items, method);
+    // orders.jsonl is otherwise written only when an order closes (onClose,
+    // below) -- an order still waiting when the process dies would leave no
+    // row there, and lastNumber would hand its number out again on restart.
+    // No `closed` field: todaySummary, dayStats and /staff/api/orders all key
+    // on `closed` and correctly ignore this row; lastNumber keys on
+    // `reference` alone and sees it.
+    record(ordersLog, { reference: o.reference, method: o.method, status: 'created', created: stamp(new Date(o.createdAt)) });
     log(`[kiosk] order ${o.number} P${o.amount}: ${itemsText(o.items)}`);
     push();
     json(res, 200, { order: publicOrder(o) });
@@ -403,7 +414,8 @@ function createKioskServer({
   const staffName = (req) => { const s = sessions.get(tokenFrom(req)); return s ? s.name : null; };
 
   const today = () => stamp().slice(0, 10);
-  const onToday = (field) => (r) => String(r[field] || '').startsWith(today());
+  // The day computed once per call, not once per row filtered.
+  const onToday = (field) => { const t = today(); return (r) => String(r[field] || '').startsWith(t); };
 
   // Today's cash and orders, from the logs so they survive a restart. A QR
   // demo payment is pretend money, not cash in the till: rows without a
@@ -416,17 +428,29 @@ function createKioskServer({
     method: o.method || 'cash',
   });
 
-  function todaySummary() {
-    const pays = readJsonl(paymentsLog).filter(onToday('date_created')).filter(isCash);
-    return {
-      paid: pays.length,
-      total: pays.reduce((a, p) => a + (Number(p.amount) || 0), 0),
-      orders: readJsonl(ordersLog).filter(onToday('closed')).slice(-20).reverse().map(orderRow),
-    };
-  }
-
   const dayOf = (offset) => stamp(new Date(Date.now() - offset * 86400000)).slice(0, 10);
   const hourOf = (d) => Number(String(d).slice(11, 13)) || 0;
+
+  // Polled every second per open staff page, and the logs never rotate --
+  // readJsonl returns the very same array object while its file is
+  // unchanged, so that identity (plus the day, in case of a rollover with no
+  // file write at all) is enough to tell a genuinely new result is needed.
+  let todaySummaryCache = { orders: null, payments: null, day: null, result: null };
+  function todaySummary() {
+    const orders = readJsonl(ordersLog);
+    const payments = readJsonl(paymentsLog);
+    const day = dayOf(0);
+    const c = todaySummaryCache;
+    if (c.orders === orders && c.payments === payments && c.day === day) return c.result;
+    const pays = payments.filter(onToday('date_created')).filter(isCash);
+    const result = {
+      paid: pays.length,
+      total: pays.reduce((a, p) => a + (Number(p.amount) || 0), 0),
+      orders: orders.filter(onToday('closed')).slice(-20).reverse().map(orderRow),
+    };
+    todaySummaryCache = { orders, payments, day, result };
+    return result;
+  }
 
   // The dashboard's cards: a day's closed orders and cash, and that day by
   // the hour for the sparklines. Cancelled counts expired too -- both are
@@ -450,9 +474,20 @@ function createKioskServer({
     return { paid, cancelled, sales, hourly };
   }
 
+  // Same reasoning as todaySummaryCache above: dayStats loops every order and
+  // every payment row, twice, so this must not run again every second poll
+  // when nothing on disk changed.
+  let dashboardCache = { orders: null, payments: null, day: null, result: null };
   function dashboardStats() {
+    const orders = readJsonl(ordersLog);
+    const payments = readJsonl(paymentsLog);
+    const day = dayOf(0);
+    const c = dashboardCache;
+    if (c.orders === orders && c.payments === payments && c.day === day) return c.result;
     const { hourly: _unused, ...yesterday } = dayStats(dayOf(1));
-    return { today: dayStats(dayOf(0)), yesterday };
+    const result = { today: dayStats(dayOf(0)), yesterday };
+    dashboardCache = { orders, payments, day, result };
+    return result;
   }
 
   // The dashboard's Kiosk Status list. uploadQueue is the sales still waiting
@@ -486,6 +521,12 @@ function createKioskServer({
       status: kioskStatus(),
       waitingCredits: openCredits(readJsonl(logs.unclaimed), readJsonl(staffLog), creditSince()).length,
       attention: readJsonl(logs.interrupted).filter(onToday('date_created')).length,
+      // The Pi's own clock decides "today" and "this hour" -- a phone or
+      // laptop looking at the dashboard must not use its own, possibly wrong
+      // or differently-zoned, clock for the Transactions Today filter or the
+      // sparklines' current hour.
+      day: dayOf(0),
+      hour: new Date().getHours(),
     };
   }
 
@@ -717,7 +758,16 @@ function createKioskServer({
       if (req.method === 'GET' && url === '/staff/api/orders') {
         const since = dayOf(ORDER_DAYS - 1);
         const rows = readJsonl(ordersLog).filter((o) => String(o.closed || '') >= since);
-        return json(res, 200, { orders: rows.slice(-200).reverse().map(orderRow) });
+        // Totals over every row in the window, not the 200 the table actually
+        // gets -- a busy week must not under-report itself once it passes the
+        // cap. cash mirrors isCash's rule: no method on an old row is cash.
+        const cashRows = rows.filter((o) => o.status === 'paid' && isCash(o));
+        const totals = {
+          orders: rows.length,
+          paid: cashRows.length,
+          cash: cashRows.reduce((a, o) => a + (Number(o.amount) || 0), 0),
+        };
+        return json(res, 200, { orders: rows.slice(-200).reverse().map(orderRow), totals });
       }
       if (req.method === 'POST' && url === '/staff/api/price') return staffSetPrice(req, res, name);
       if (req.method === 'POST' && url === '/staff/api/prime') return staffPrime(req, res, name);

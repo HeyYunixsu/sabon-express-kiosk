@@ -62,8 +62,8 @@ test('creating an order', async (t) => {
     assert.strictEqual(s.body.pending, null);
     assert.deepStrictEqual([s.body.lastClosed.number, s.body.lastClosed.status, s.body.lastClosed.reason],
       ['A-1', 'cancelled', 'customer']);
-    const rows = k.rows('orders.jsonl');
-    assert.deepStrictEqual([rows[0].status, rows[0].reason, rows[0].items], ['cancelled', 'customer', '1:2,3:1']);
+    const row = k.rows('orders.jsonl').find((r) => r.closed);
+    assert.deepStrictEqual([row.status, row.reason, row.items], ['cancelled', 'customer', '1:2,3:1']);
   });
 });
 
@@ -94,8 +94,8 @@ test('the kiosk PIN confirms the waiting order', async (t) => {
       { reference: pay[0].reference, method: pay[0].method, amount: pay[0].amount, staff: pay[0].staff, via: pay[0].via, items: pay[0].items },
       { reference: body.order.reference, method: 'cash', amount: 20, staff: 'Ana', via: 'kiosk_pin', items: '1:2,3:1' });
     assert.match(pay[0].date_created, /^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d$/);
-    const ord = k.rows('orders.jsonl');
-    assert.deepStrictEqual([ord[0].status, ord[0].by], ['paid', 'Ana']);
+    const ord = k.rows('orders.jsonl').find((r) => r.closed);
+    assert.deepStrictEqual([ord.status, ord.by], ['paid', 'Ana']);
   });
 
   await t.test('the paid order reaches the page for the dispense cards', async () => {
@@ -129,7 +129,7 @@ test('an order expires and can no longer be paid', async (t) => {
   const r = await k.post('/api/order/pin', { number: body.order.number, pin: '4821' });
   assert.deepStrictEqual([r.code, r.body.error], [409, 'not_waiting']);
   assert.deepStrictEqual(arms(stub), []);
-  assert.strictEqual(k.rows('orders.jsonl')[0].status, 'expired');
+  assert.strictEqual(k.rows('orders.jsonl').find((r) => r.closed).status, 'expired');
 });
 
 test('confirming checks stock and prices at the moment of payment', async (t) => {
@@ -141,7 +141,7 @@ test('confirming checks stock and prices at the moment of payment', async (t) =>
     const r = await k.post('/api/order/pin', { number: body.order.number, pin: '4821' });
     assert.deepStrictEqual([r.code, r.body.error], [409, 'out_of_stock']);
     assert.deepStrictEqual(arms(stub), []);
-    assert.strictEqual(k.rows('orders.jsonl')[0].reason, 'out_of_stock');
+    assert.strictEqual(k.rows('orders.jsonl').find((r) => r.closed).reason, 'out_of_stock');
   });
 
   await t.test('a price change cancels the order', async (t2) => {
