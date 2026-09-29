@@ -301,8 +301,9 @@ X-GNOME-Autostart-enabled=true
 EOF
 log "[kiosk] Browser autostart installed: $AUTOSTART_DIR/sabon-kiosk.desktop"
 
-# Where staff open the tablet page, when counter cash is switched on.
-if grep -qE '^[[:space:]]*STAFF_TABLET[[:space:]]*=[[:space:]]*1[[:space:]]*$' "$SCRIPT_DIR/CONFIG/config.env" 2>/dev/null; then
+# Where staff open the tablet page, when counter cash is switched on. The
+# server strips a matching pair of quotes, so "1" and '1' also mean on.
+if grep -qE '^[[:space:]]*STAFF_TABLET[[:space:]]*=[[:space:]]*["'"'"']?1["'"'"']?[[:space:]]*$' "$SCRIPT_DIR/CONFIG/config.env" 2>/dev/null; then
   KPORT="$(sed -n 's/^[[:space:]]*KIOSK_PORT[[:space:]]*=[[:space:]]*//p' "$SCRIPT_DIR/CONFIG/config.env" | tail -1 | tr -d '\r"')"
   log "[kiosk] Staff tablet page: http://$(hostname -I | awk '{print $1}'):${KPORT:-3000}/staff"
 fi
