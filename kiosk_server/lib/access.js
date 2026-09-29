@@ -12,11 +12,14 @@ function isLocal(req) {
 }
 
 // Matched on the raw URL, before any decoding: a dot-dot or an escape is
-// refused outright rather than trusted to normalise somewhere safe.
-function lanAllowed(url) {
+// refused outright rather than trusted to normalise somewhere safe. /staff
+// is added only when the staff tablet is on, /pay only when the QR demo is
+// on; /img and /fonts always, since both pages draw from them.
+function lanAllowed(url, { staff = false, pay = false } = {}) {
   if (url.includes('..') || url.includes('%')) return false;
-  return url === '/staff' || url.startsWith('/staff/')
-      || url.startsWith('/img/') || url.startsWith('/fonts/');
+  return url.startsWith('/img/') || url.startsWith('/fonts/')
+      || (staff && (url === '/staff' || url.startsWith('/staff/')))
+      || (pay && url.startsWith('/pay/'));
 }
 
 // The address a tablet on the shop Wi-Fi uses to reach this Pi. Link-local

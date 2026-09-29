@@ -87,6 +87,10 @@ function createKioskServer({
   }
   const idleSeconds = parseInt(config.KIOSK_IDLE_S || '60', 10) || 60;
   const staffTablet = config.STAFF_TABLET === '1';
+  // A pretend QR Ph payment for demos: the kiosk decides the payment
+  // succeeded, which a real shop must never do (CLAUDE.md rule 3).
+  const qrDemo = config.QR_DEMO === '1';
+  if (qrDemo) log('[kiosk] QR DEMO MODE — QR payments are pretend; switch QR_DEMO off for a real shop');
   const letterRaw = (config.KIOSK_LETTER || '').trim().toUpperCase();
   const letterValid = /^[A-Z]$/.test(letterRaw);
   const letter = letterValid ? letterRaw : 'A';
@@ -122,15 +126,16 @@ function createKioskServer({
   });
   const sessions = createSessions();
   const port = parseInt(config.KIOSK_PORT || '3000', 10);
-  // What the QR on the kiosk points at. Null when the tablet is off or the
-  // Pi has no network, and the kiosk then shows no QR. Recomputed, not fixed
-  // at boot: PM2 starts before Wi-Fi DHCP on a Pi, so the address at startup
-  // is often not the address a minute later. Cached briefly so it is not an
-  // os.networkInterfaces() call on every /api/state and every stream tick.
+  // What the QR on the kiosk points at. Null when neither the tablet nor the
+  // QR demo is on, or the Pi has no network, and the kiosk then shows no QR.
+  // Recomputed, not fixed at boot: PM2 starts before Wi-Fi DHCP on a Pi, so
+  // the address at startup is often not the address a minute later. Cached
+  // briefly so it is not an os.networkInterfaces() call on every /api/state
+  // and every stream tick.
   const STAFF_BASE_CACHE_MS = 30000;
   let staffBaseCache = { at: 0, value: null };
   function staffBase() {
-    if (!staffTablet) return null;
+    if (!staffTablet && !qrDemo) return null;
     const now = Date.now();
     if (now - staffBaseCache.at < STAFF_BASE_CACHE_MS) return staffBaseCache.value;
     const lanIp = lanAddress();
@@ -152,7 +157,7 @@ function createKioskServer({
     timeoutMs,
     onClose: (o) => {
       record(ordersLog, {
-        reference: o.reference, items: itemsText(o.items), amount: o.amount,
+        reference: o.reference, method: o.method, items: itemsText(o.items), amount: o.amount,
         status: o.status, reason: o.reason, by: o.by,
         created: stamp(new Date(o.createdAt)), closed: stamp(new Date(o.closedAt)),
       });
@@ -167,7 +172,7 @@ function createKioskServer({
   function publicOrder(o) {
     if (!o) return null;
     return {
-      number: o.number, reference: o.reference, amount: o.amount,
+      number: o.number, reference: o.reference, amount: o.amount, method: o.method,
       status: o.status, reason: o.reason, by: o.by,
       items: o.items.map((i) => ({
         slot: i.slot, qty: i.qty, price: i.price,
@@ -292,12 +297,16 @@ function createKioskServer({
     const batch = itemsText(o.items);
     if (!ctrl.send(`ARM_BATCH,${batch}`)) return [503, { error: 'offline' }];
     armingUntil = Date.now() + 3000;
+    const method = o.method === 'qr' ? 'qr_demo' : 'cash';
     record(paymentsLog, {
-      reference: o.reference, method: 'cash', amount: o.amount, items: batch,
+      reference: o.reference, method, amount: o.amount, items: batch,
       staff: name, via, date_created: stamp(),
     });
-    dispenseOrder = { reference: o.reference, staff: name, items: o.items.map(({ slot, qty }) => ({ slot, qty })) };
-    log(`[kiosk] cash ${o.reference} P${o.amount} by ${name} via ${via}: ARM_BATCH,${batch}`);
+    dispenseOrder = {
+      reference: o.reference, staff: o.method === 'qr' ? null : name,
+      items: o.items.map(({ slot, qty }) => ({ slot, qty })),
+    };
+    log(`[kiosk] ${method} ${o.reference} P${o.amount} by ${name} via ${via}: ARM_BATCH,${batch}`);
     orders.paid(o, name);   // onClose pushes the new state to the screens
     return [200, { ok: true, order: publicOrder(o) }];
   }
@@ -306,13 +315,19 @@ function createKioskServer({
   async function createOrder(req, res) {
     const body = await readBody(req);
     if (!body) return json(res, 400, { error: 'bad_request' });
+    const method = body.method === undefined ? 'cash' : body.method;
+    if (method !== 'cash' && method !== 'qr') return json(res, 400, { error: 'bad_method' });
+    if (method === 'qr' && !qrDemo) return json(res, 400, { error: 'qr_off' });
+    // The QR points the phone at this Pi's Wi-Fi address; without one there
+    // is nothing to scan.
+    if (method === 'qr' && !staffBase()) return json(res, 503, { error: 'no_network' });
     if (!ctrl.online) return json(res, 503, { error: 'offline' });
     if (Date.now() < armingUntil || machineInUse()) return json(res, 409, { error: 'machine_busy' });
     if (orders.current()) return json(res, 409, { error: 'order_waiting', order: publicOrder(orders.current()) });
     const p = priceItems(body.items);
     if (p.code) return json(res, p.code, p.body);
     if (body.amount !== p.amount) return json(res, 409, { error: 'price_changed', amount: p.amount });
-    const o = orders.create(p.items);
+    const o = orders.create(p.items, method);
     log(`[kiosk] order ${o.number} P${o.amount}: ${itemsText(o.items)}`);
     push();
     json(res, 200, { order: publicOrder(o) });
@@ -325,6 +340,7 @@ function createKioskServer({
     if (!o || o.number !== body.number) {
       return json(res, 409, { error: 'not_waiting', order: publicOrder(orders.find(body.number)) });
     }
+    if (o.method === 'qr') return json(res, 409, { error: 'qr_order' });
     const who = kioskPad.check(body.pin);
     if (!who.ok) return json(res, ...pinRefusal(who));
     json(res, ...confirmPaid(o, who.name, 'kiosk_pin'));
@@ -379,9 +395,12 @@ function createKioskServer({
   const today = () => stamp().slice(0, 10);
   const onToday = (field) => (r) => String(r[field] || '').startsWith(today());
 
-  // Today's cash and orders, from the logs so they survive a restart.
+  // Today's cash and orders, from the logs so they survive a restart. A QR
+  // demo payment is pretend money, not cash in the till: rows without a
+  // method are older logs, from before the demo existed, and count as cash.
+  const isCash = (p) => !p.method || p.method === 'cash';
   function todaySummary() {
-    const pays = readJsonl(paymentsLog).filter(onToday('date_created'));
+    const pays = readJsonl(paymentsLog).filter(onToday('date_created')).filter(isCash);
     return {
       paid: pays.length,
       total: pays.reduce((a, p) => a + (Number(p.amount) || 0), 0),
@@ -398,6 +417,7 @@ function createKioskServer({
       machine: !ctrl.online ? 'offline' : machineInUse() ? 'dispensing' : 'ready',
       pending: publicOrder(orders.current()),
       today: todaySummary(),
+      qrDemo,
     };
   }
 
@@ -427,7 +447,7 @@ function createKioskServer({
       primesToday[Number(r.slot)] = (primesToday[Number(r.slot)] || 0) + 1;
     }
     const cashByStaff = {};
-    for (const p of readJsonl(paymentsLog).filter(onToday('date_created'))) {
+    for (const p of readJsonl(paymentsLog).filter(onToday('date_created')).filter(isCash)) {
       const c = cashByStaff[p.staff] || (cashByStaff[p.staff] = { count: 0, amount: 0 });
       c.count++;
       c.amount += Number(p.amount) || 0;
@@ -572,7 +592,38 @@ function createKioskServer({
       orders.cancel(o, 'staff', name);
       return json(res, 200, { ok: true, order: publicOrder(o) });
     }
+    if (o.method === 'qr') return json(res, 409, { error: 'qr_order' });
     json(res, ...confirmPaid(o, name, 'tablet'));
+  }
+
+  // ---- QR payment demo: the phone that "pays" ---------------------------------
+  // Only a waiting QR order can be paid here, through the same five checks as
+  // cash. Nothing at all answers when QR_DEMO is off.
+  async function payConfirm(req, res) {
+    if (!isJson(req)) return json(res, 415, { error: 'json_only' });
+    const body = await readBody(req);
+    const number = body && body.number;
+    const o = orders.current();
+    if (!o || o.number !== number) {
+      const known = orders.find(number);
+      return json(res, 409, { error: 'not_waiting', order: known && known.method === 'qr' ? publicOrder(known) : null });
+    }
+    if (o.method !== 'qr') return json(res, 409, { error: 'not_qr' });
+    json(res, ...confirmPaid(o, 'QR demo', 'phone'));
+  }
+
+  function payRoutes(req, res, url) {
+    if (!qrDemo) { res.writeHead(404); return res.end('Not found'); }
+    if (req.method === 'GET' && /^\/pay\/[A-Z]-\d+$/.test(url)) {
+      return servePage(res, path.join(publicDir, 'pay', 'index.html'));
+    }
+    if (req.method === 'GET' && url === '/pay/api/order') {
+      const o = orders.find(new URL(req.url, 'http://kiosk').searchParams.get('number'));
+      return o && o.method === 'qr' ? json(res, 200, { order: publicOrder(o) }) : json(res, 404, { error: 'unknown_order' });
+    }
+    if (req.method === 'POST' && url === '/pay/api/confirm') return payConfirm(req, res);
+    if (req.method === 'GET') return serveStatic(req, res);   // /pay/pay.css, /pay/pay.js
+    res.writeHead(405); res.end();
   }
 
   function servePage(res, file) {
@@ -633,13 +684,15 @@ function createKioskServer({
 
   const server = http.createServer((req, res) => {
     const url = req.url.split('?')[0];
-    // From the shop Wi-Fi, the staff page and its pictures only. Everything
-    // that orders, unlocks or pours answers the Pi itself and nobody else.
-    if (!isLocal(req) && !lanAllowed(url)) { res.writeHead(403); return res.end('Forbidden'); }
+    // From the shop Wi-Fi: the staff page (STAFF_TABLET), the QR demo's pay
+    // page (QR_DEMO) and their pictures, nothing else. Everything the kiosk
+    // itself orders, unlocks or pours with answers the Pi alone.
+    if (!isLocal(req) && !lanAllowed(url, { staff: staffTablet, pay: qrDemo })) { res.writeHead(403); return res.end('Forbidden'); }
+    if (url === '/pay' || url.startsWith('/pay/')) return payRoutes(req, res, url);
     if (url === '/staff' || url.startsWith('/staff/')) return staffRoutes(req, res, url);
     if (req.method === 'GET' && url === '/api/state') {
       return json(res, 200, {
-        products, idleSeconds, cashReady: staff.length > 0, staffTablet, ...snapshot(),
+        products, idleSeconds, cashReady: staff.length > 0, staffTablet, qrDemo, ...snapshot(),
       });
     }
     if (req.method === 'GET' && url === '/api/stream') return stream(req, res);
@@ -657,8 +710,8 @@ function createKioskServer({
     server,
     ctrl,
     port,
-    // The shop Wi-Fi only when the tablet is switched on.
-    host: staffTablet ? '0.0.0.0' : '127.0.0.1',
+    // The shop Wi-Fi only when the tablet or the QR demo is on.
+    host: staffTablet || qrDemo ? '0.0.0.0' : '127.0.0.1',
     close() {
       clearInterval(expiryTimer);
       ctrl.close();
@@ -675,5 +728,5 @@ if (require.main === module) {
   const k = createKioskServer();
   k.server.listen(k.port, k.host, () =>
     console.log(`[kiosk] listening on http://localhost:${k.port}/`
-      + (k.host === '0.0.0.0' ? '  (staff tablet: /staff on the shop Wi-Fi)' : '')));
+      + (k.host === '0.0.0.0' ? '  (also on the shop Wi-Fi: /staff, /pay)' : '')));
 }

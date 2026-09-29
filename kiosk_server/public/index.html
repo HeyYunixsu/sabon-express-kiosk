@@ -28,7 +28,7 @@
       <span class="v2-chip">
         <span class="v2-chip-k">Pay with</span>
         <span class="v2-chip-sep"></span>
-        <span class="v2-chip-v">Cash</span>
+        <span class="v2-chip-v" id="kpi-pay">Cash</span>
       </span>
       <span class="v2-chip v2-chip-brand">
         <span class="v2-chip-k">Bring your own bottle</span>
@@ -101,8 +101,8 @@
         <button class="pay-tile" id="pay-qr" type="button" disabled>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3h-3zM20 14v.01M14 20h.01M17 20h4v-3"/></svg>
           <span class="pay-name">QR Ph</span>
-          <span class="pay-desc">GCash, Maya, ShopeePay and bank apps</span>
-          <span class="pay-soon">Coming soon</span>
+          <span class="pay-desc" id="pay-qr-desc">GCash, Maya, ShopeePay and bank apps</span>
+          <span class="pay-soon" id="pay-qr-soon">Coming soon</span>
         </button>
       </div>
       <p class="pay-msg" id="pay-msg" role="alert"></p>

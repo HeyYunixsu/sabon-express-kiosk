@@ -147,6 +147,7 @@
 
   function render() {
     if (!state) return;
+    $('s-demo').hidden = !state.qrDemo;
     const st = $('s-state');
     st.className = `s-state is-${state.machine}`;
     st.querySelector('b').textContent = { ready: 'Kiosk ready', dispensing: 'Dispensing', offline: 'Kiosk offline' }[state.machine];
@@ -162,6 +163,10 @@
     $('w-body').hidden = !o;
     $('w-empty').hidden = !!o;
     $('w-num').textContent = o ? `Order ${o.number}` : '';
+    // A QR (demo) order is paid on the customer's phone, never as cash here.
+    const qr = !!o && o.method === 'qr';
+    $('w-title').textContent = qr ? 'Waiting for QR payment (demo)' : 'Waiting for payment';
+    $('w-paid').hidden = qr;
     if (o) {
       $('w-items').innerHTML = o.items.map((i) => `<li>
         <img src="${esc(i.img)}" alt=""><b>${esc(i.name)}</b><span class="q">× ${i.qty}</span><span class="p">${peso(i.price * i.qty)}</span>
@@ -213,6 +218,7 @@
     price_changed: 'Prices changed — the order was cancelled. Ask the customer to order again.',
     machine_busy: 'The machine is still busy — wait a moment and try again.',
     network: 'Cannot reach the kiosk. Check the Wi-Fi.',
+    qr_order: 'This order is paid by QR on the customer\'s phone.',
   };
 
   $('w-paid').addEventListener('click', () => {

@@ -1,11 +1,11 @@
 'use strict';
 // The order book: at most one order waiting for payment at a time.
 //
-// An order is created when the customer chooses Cash, priced by the caller
-// from the controller, and frozen. It then ends exactly once -- paid, expired
-// or cancelled -- and onClose is told, so the server can log it and update
-// the screens. Nothing here talks to the controller or the disk, so the whole
-// lifecycle is tested with a fake clock.
+// An order is created when the customer chooses Cash or (in the QR demo) QR
+// Ph, priced by the caller from the controller, and frozen. It then ends
+// exactly once -- paid, expired or cancelled -- and onClose is told, so the
+// server can log it and update the screens. Nothing here talks to the
+// controller or the disk, so the whole lifecycle is tested with a fake clock.
 
 const { dayKey } = require('./records');
 
@@ -47,14 +47,14 @@ function createOrderBook({ letter = 'A', timeoutMs = 180000, now = Date.now, onC
   }
 
   return {
-    create(items) {
+    create(items, method = 'cash') {
       expireIfDue();
       if (waiting) return null;
       const { number, reference } = nextNumber();
       const frozen = items.map(({ slot, qty, price }) => ({ slot, qty, price }));
       const t = now();
       waiting = {
-        number, reference, items: frozen,
+        number, reference, items: frozen, method,
         amount: frozen.reduce((a, i) => a + i.price * i.qty, 0),
         status: 'waiting', reason: null, by: null,
         createdAt: t, expiresAt: t + timeoutMs, closedAt: null,

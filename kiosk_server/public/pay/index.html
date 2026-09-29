@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0B0E14">
+  <title>Sabon Express · Pay (demo)</title>
+  <link rel="stylesheet" href="/pay/pay.css">
+</head>
+<body>
+  <div class="p-demo">DEMO — no real money is taken</div>
+  <main class="p-card">
+    <img class="p-logo" src="/img/sabon-express-logo.png" alt="Sabon Express">
+    <h1>QR Ph payment</h1>
+    <div id="p-body" hidden>
+      <p class="p-num" id="p-num"></p>
+      <ul class="p-items" id="p-items"></ul>
+      <div class="p-total"><span>Total</span><b id="p-total"></b></div>
+      <button class="p-pay" id="p-pay" type="button" hidden>Pay</button>
+    </div>
+    <p class="p-state" id="p-state" role="status"></p>
+  </main>
+  <script src="/pay/pay.js"></script>
+</body>
+</html>
