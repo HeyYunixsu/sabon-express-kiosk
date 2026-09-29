@@ -83,6 +83,10 @@ touchscreen (Chromium, kiosk mode, same Pi)
                                                         └──▶ backend API: sales, machine health
 ```
 
+With `STAFF_TABLET = 1`, the same kiosk server also answers on the shop Wi-Fi
+(`0.0.0.0:KIOSK_PORT`) — `/staff` and its pictures/fonts only, nothing that
+orders, unlocks or pours (`lib/access.js`).
+
 The controller owns the machine and takes commands over TCP. It does not care
 who is connected, so the kiosk replaces the cashier dashboard without touching
 how the pumps work.
@@ -172,8 +176,9 @@ not a closed or open socket.
     reads them so one firmware serves both products. The pull-up rules in
     `docs/INSTALLATION.md` still apply if buttons are ever wired.
 11. **Do not re-add the cashier.** No staff-driven cart-and-unlock flow, no
-    cashier dashboard. Staff touch this machine only to confirm a cash payment
-    with their PIN and to open the hidden staff menu.
+    cashier dashboard. Staff touch the machine itself only to confirm a cash
+    payment with their PIN, as a fallback; everything else — sign-in, mark
+    paid, cancel, today's sales — is on the staff tablet page (`/staff`).
 
 ## How the kiosk decides things
 
@@ -191,8 +196,11 @@ not a closed or open socket.
   machine always show the dispense screen, so a reload never hides them.
   There is no "tap to continue" on the attract screen; unused presses expire
   at `ARM_TIMEOUT_SECONDS` into `UNCLAIMED_LOG`.
-- **Unlock opens a payment choice**: Cash (staff PIN on the next screen) or
-  QR Ph, which shows but is disabled as "Coming soon" until piece 4.
+- **Unlock opens a payment choice**: Cash, or QR Ph which shows but is
+  disabled as "Coming soon" until piece 4. With `STAFF_TABLET = 1`, Cash
+  shows "Pay at the counter" (the order, a QR and a countdown) and staff
+  mark it paid from `/staff`; otherwise Cash goes straight to the staff PIN
+  pad on the kiosk.
 - **The dispense screen is one card per purchased product**, side by side
   (up to six in one row), and each tap on
   a card's Dispense pours **one unit** (one `DISPENSE`, retried through the
