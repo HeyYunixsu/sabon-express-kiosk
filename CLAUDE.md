@@ -24,7 +24,7 @@ layout for a customer's finger (nothing under 72px, main actions 96px+).
 |---|---|---|
 | 1 | Controller `DISPENSE`, `PAUSE`, `RESUME` | **Done**, tested |
 | 2 | Kiosk server and customer screens, cash only | **Done**, tested end to end against the real controller; not yet on a Pi |
-| 3 | Staff PIN menu | Next |
+| 3 | Counter cash + staff tablet (stage 1 of the counter-cash spec) | **Done** — `docs/superpowers/specs/2026-09-28-counter-cash-design.md` |
 | 4 | QR payment | Blocked: backend payment endpoints do not exist yet |
 | 5 | Install runbook for a kiosk Pi | Last |
 
@@ -116,6 +116,9 @@ Ports: controller **8080** (`SOCKET_PORT`), kiosk server **3000**
 | `kiosk_server/lib/controller.js` | TCP client, STATUS parsing, offline rule, `dispensePaid` |
 | `kiosk_server/lib/staff.js` | Staff PIN hashing, checking, lockout |
 | `kiosk_server/public/` | The screens: `index.html`, `css/kiosk.css`, `js/kiosk.js` |
+| `kiosk_server/lib/orders.js` | The one waiting order: number, frozen price, 3-minute life |
+| `kiosk_server/lib/sessions.js`, `lib/access.js` | Staff sign-in; what the shop Wi-Fi may reach |
+| `kiosk_server/public/staff/` | The staff tablet page |
 | `CONFIG/config.env.sample` | Every setting. `CONFIG/README.md` explains each |
 | `docs/INSTALLATION.md`, `docs/QUICK_INSTALL.md` | Pi setup. Copied from the cashier product, adapted in piece 5 |
 | `kiosk_exit_tool/` | Keyboard shortcut to escape the locked-down browser |
@@ -174,9 +177,11 @@ not a closed or open socket.
 
 ## How the kiosk decides things
 
-- **The server prices the sale, not the page.** `/api/cash` recomputes the
-  total from the controller's prices and refuses (`price_changed`) if it
-  differs from what the customer was shown.
+- **Cash is an order.** `/api/order` prices it from the controller and
+  freezes it; `confirmPaid()` in `server.js` is the only way a payment
+  becomes presses, from the staff tablet or the kiosk PIN, and runs the
+  spec's five checks in order. With `STAFF_TABLET = 1` staff confirm from
+  `/staff` on the shop Wi-Fi, which is the only thing the Wi-Fi can reach.
 - **Nothing is queued while offline.** An ARM or DISPENSE held for a reconnect
   could fire hours later with nobody at the machine, so the server refuses.
 - **No new sale while the machine owes presses.** Any armed, busy or queued

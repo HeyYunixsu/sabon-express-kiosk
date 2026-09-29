@@ -47,6 +47,9 @@ fresh kiosk sets none of them. Set one only to move that file elsewhere.
 |-----|---------|-------------|
 | `KIOSK_PORT` | `3000` | HTTP port of the kiosk server. The touchscreen's browser runs on the same Pi and opens `http://localhost:3000/`, so it needs no root |
 | `KIOSK_IDLE_S` | `60` | Seconds without a touch before the pick and pay screens return to the start |
+| `STAFF_TABLET` | `0` | `1` = customers pay cash at the counter and staff mark orders paid at `http://<pi>:<KIOSK_PORT>/staff` on the shop Wi-Fi. Only that page answers the Wi-Fi |
+| `ORDER_PAY_TIMEOUT_S` | `180` | Seconds an order waits for payment before it expires. Clamped 60–900 |
+| `KIOSK_LETTER` | `A` | Letter in front of order numbers (`A-27`); one per kiosk in a shop |
 
 ### Staff (cash confirmation)
 
@@ -58,8 +61,8 @@ fresh kiosk sets none of them. Set one only to move that file elsewhere.
 A PIN identifies a person, so every cash sale in `logs/payments.jsonl` names
 who took the money. Only the hash is stored: `config.env` lives on the same SD
 card as everything else, and a plain or unsalted PIN would be read straight off
-it. Five wrong PINs in a row lock the pad for a minute and are logged to
-`logs/pin_lockouts.jsonl`. With no staff configured the kiosk cannot take cash.
+it. Five wrong PINs in a row lock that pad (kiosk or tablet) for a minute and are logged to
+`logs/staff_events.jsonl`. With no staff configured the kiosk cannot take cash.
 
 ### Slot hardware (BCM pin numbers)
 

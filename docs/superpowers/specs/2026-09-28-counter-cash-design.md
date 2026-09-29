@@ -130,9 +130,10 @@ The kiosk PIN fallback runs the same five steps.
 - `STAFF_TABLET = 1` in `config.env` opens the server on the LAN
   (`0.0.0.0`). Without it the server binds `127.0.0.1` as today, and the
   staff page is unreachable.
-- From any address other than the Pi itself, only `/staff*` answers. The
-  kiosk page, its stream, and every customer action (`/api/order*`,
-  `/api/cash`, `/api/dispense`, `/api/pause`, `/api/resume`) return 403.
+- From any address other than the Pi itself, only `/staff*` answers, plus
+  `/img/*` and `/fonts/*` (the staff page's pictures and fonts — static
+  files, no actions). The kiosk page, its stream, and every customer action
+  (`/api/order*`, `/api/dispense`, `/api/pause`, `/api/resume`) return 403.
   Local means the socket's remote address is `127.0.0.1`, `::1` or
   `::ffff:127.0.0.1`.
 - Staff sessions: 32 random bytes in a cookie, `HttpOnly; SameSite=Strict`,
