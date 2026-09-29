@@ -165,3 +165,54 @@ test('air clear: needs its confirm, runs PRIME, logged with the staff name', asy
     assert.deepStrictEqual([r.code, r.body.result], [409, 'slot_empty']);
   });
 });
+
+test('waiting credits: give back re-arms exactly the unclaimed presses, write off closes', async (t) => {
+  const { stub, k, headers } = await kiosk(t);
+  const now = stamp();
+  const old = stamp(new Date(Date.now() - 10 * 86400000));
+  writeRows(k, 'logs/unclaimed_credits.jsonl', [
+    { machine_id: '1', slot: '2', qty: 1, amount: 5, reason: 'timeout', date_created: old },
+    { machine_id: '1', slot: '3', qty: 2, amount: 20, reason: 'timeout', date_created: now },
+    { machine_id: '1', slot: '5', qty: 1, amount: 8, reason: 'cancelled', date_created: now },
+  ]);
+  const list = async () => (await k.get('/staff/api/tools', headers)).body.credits;
+  const open = await list();
+
+  await t.test('the last seven days, newest first', () => {
+    assert.deepStrictEqual(open.map((c) => [c.slot, c.qty, c.amount]), [[5, 1, 8], [3, 2, 20]]);
+  });
+
+  await t.test('give back is refused while an order waits', async () => {
+    const { body } = await k.post('/api/order', sale);
+    const r = await k.post('/staff/api/credits/give-back', { id: open[1].id }, headers);
+    assert.deepStrictEqual([r.code, r.body.error], [409, 'order_waiting']);
+    await k.post('/api/order/cancel', { number: body.order.number });
+    assert.deepStrictEqual(arms(stub), []);
+  });
+
+  await t.test('give back arms exactly the unclaimed presses and shows them on the kiosk', async () => {
+    const r = await k.post('/staff/api/credits/give-back', { id: open[1].id }, headers);
+    assert.strictEqual(r.code, 200);
+    await until(() => arms(stub).length === 1);
+    assert.deepStrictEqual(arms(stub), ['ARM,3,2']);
+    const st = await k.get('/api/state');
+    assert.deepStrictEqual(st.body.order.items, [{ slot: 3, qty: 2 }]);
+    const ev = k.rows('staff_events.jsonl').find((e) => e.event === 'credit_give_back');
+    assert.deepStrictEqual([ev.staff, ev.credit, ev.slot, ev.qty, ev.amount], ['Ana', open[1].id, 3, 2, 20]);
+  });
+
+  await t.test('a settled credit cannot be given back twice', async () => {
+    const r = await k.post('/staff/api/credits/give-back', { id: open[1].id }, headers);
+    assert.deepStrictEqual([r.code, r.body.error], [409, 'not_open']);
+    assert.strictEqual(arms(stub).length, 1);
+  });
+
+  await t.test('write off closes the entry without arming', async () => {
+    const r = await k.post('/staff/api/credits/write-off', { id: open[0].id }, headers);
+    assert.strictEqual(r.code, 200);
+    assert.strictEqual(arms(stub).length, 1);
+    assert.deepStrictEqual(await list(), []);
+    const ev = k.rows('staff_events.jsonl').find((e) => e.event === 'credit_write_off');
+    assert.deepStrictEqual([ev.staff, ev.slot, ev.qty, ev.amount], ['Ana', 5, 1, 8]);
+  });
+});

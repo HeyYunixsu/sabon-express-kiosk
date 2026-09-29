@@ -471,6 +471,32 @@ function createKioskServer({
     json(res, ackCode(result, ['started']), { result });
   }
 
+  // Paid presses that were never poured. Give back re-arms exactly those
+  // presses, so the kiosk opens the dispense screen for the customer; write
+  // off closes the entry. Either way it is settled once, under a name.
+  async function staffCredit(req, res, name, action) {
+    if (!isJson(req)) return json(res, 415, { error: 'json_only' });
+    const body = await readBody(req);
+    const id = body && body.id;
+    const c = openCredits(readJsonl(logs.unclaimed), readJsonl(staffLog), creditSince()).find((x) => x.id === id);
+    if (!c) return json(res, 409, { error: 'not_open' });
+    const fields = { staff: name, credit: c.id, slot: c.slot, qty: c.qty, amount: c.amount };
+    if (action === 'write_off') {
+      staffEvent('credit_write_off', fields);
+      log(`[kiosk] credit ${c.id} written off by ${name}`);
+      return json(res, 200, { ok: true });
+    }
+    const refused = toolRefusal();
+    if (refused) return json(res, ...refused);
+    if (!ctrl.send(`ARM,${c.slot},${c.qty}`)) return json(res, 503, { error: 'offline' });
+    armingUntil = Date.now() + 3000;
+    dispenseOrder = { reference: `credit ${c.id}`, staff: name, items: [{ slot: c.slot, qty: c.qty }] };
+    staffEvent('credit_give_back', fields);
+    log(`[kiosk] credit ${c.id} given back by ${name}: ARM,${c.slot},${c.qty}`);
+    push();
+    json(res, 200, { ok: true });
+  }
+
   async function staffLogin(req, res) {
     if (!isJson(req)) return json(res, 415, { error: 'json_only' });
     const body = await readBody(req);
@@ -528,6 +554,8 @@ function createKioskServer({
       if (req.method === 'GET' && url === '/staff/api/tools') return json(res, 200, staffTools());
       if (req.method === 'POST' && url === '/staff/api/price') return staffSetPrice(req, res, name);
       if (req.method === 'POST' && url === '/staff/api/prime') return staffPrime(req, res, name);
+      if (req.method === 'POST' && url === '/staff/api/credits/give-back') return staffCredit(req, res, name, 'give_back');
+      if (req.method === 'POST' && url === '/staff/api/credits/write-off') return staffCredit(req, res, name, 'write_off');
       if (req.method === 'GET' && url === '/staff/api/order') {
         const number = new URL(req.url, 'http://kiosk').searchParams.get('number');
         const o = orders.find(number);
