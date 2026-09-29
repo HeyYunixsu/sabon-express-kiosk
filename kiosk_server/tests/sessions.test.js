@@ -63,3 +63,13 @@ test('lanAddress picks the first non-internal IPv4', () => {
   assert.strictEqual(lanAddress(ifaces), '192.168.1.50');
   assert.strictEqual(lanAddress({ lo: ifaces.lo }), null);
 });
+
+test('lanAddress skips link-local 169.254.x.x addresses', () => {
+  assert.strictEqual(lanAddress({
+    wlan0: [{ family: 'IPv4', address: '169.254.10.20', internal: false }],
+  }), null);
+  assert.strictEqual(lanAddress({
+    wlan0: [{ family: 'IPv4', address: '169.254.10.20', internal: false },
+            { family: 'IPv4', address: '192.168.1.50', internal: false }],
+  }), '192.168.1.50');
+});

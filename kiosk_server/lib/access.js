@@ -19,11 +19,15 @@ function lanAllowed(url) {
       || url.startsWith('/img/') || url.startsWith('/fonts/');
 }
 
-// The address a tablet on the shop Wi-Fi uses to reach this Pi.
+// The address a tablet on the shop Wi-Fi uses to reach this Pi. Link-local
+// addresses (169.254.x.x, assigned when DHCP has not answered yet) are
+// skipped: no phone on the shop Wi-Fi can reach one.
 function lanAddress(ifaces = os.networkInterfaces()) {
   for (const list of Object.values(ifaces)) {
     for (const a of list || []) {
-      if ((a.family === 'IPv4' || a.family === 4) && !a.internal) return a.address;
+      if ((a.family === 'IPv4' || a.family === 4) && !a.internal && !a.address.startsWith('169.254.')) {
+        return a.address;
+      }
     }
   }
   return null;

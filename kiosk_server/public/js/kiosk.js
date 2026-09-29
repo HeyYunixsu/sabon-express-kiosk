@@ -644,6 +644,10 @@
     pending = data.pending || null;
     if (pending) pendingSeenAt = Date.now();
     lastClosed = data.lastClosed || null;
+    if (data.staffBase !== undefined && data.staffBase !== staffBase) {
+      staffBase = data.staffBase;
+      qrFor = '';   // redraw the QR against the new address
+    }
     if (data.prices && Object.keys(data.prices).length) prices = data.prices;
     if (status) trackPours();
     route();

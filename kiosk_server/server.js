@@ -112,9 +112,20 @@ function createKioskServer({
   const sessions = createSessions();
   const port = parseInt(config.KIOSK_PORT || '3000', 10);
   // What the QR on the kiosk points at. Null when the tablet is off or the
-  // Pi has no network, and the kiosk then shows no QR.
-  const lanIp = staffTablet ? lanAddress() : null;
-  const staffBase = lanIp ? `http://${lanIp}:${port}` : null;
+  // Pi has no network, and the kiosk then shows no QR. Recomputed, not fixed
+  // at boot: PM2 starts before Wi-Fi DHCP on a Pi, so the address at startup
+  // is often not the address a minute later. Cached briefly so it is not an
+  // os.networkInterfaces() call on every /api/state and every stream tick.
+  const STAFF_BASE_CACHE_MS = 30000;
+  let staffBaseCache = { at: 0, value: null };
+  function staffBase() {
+    if (!staffTablet) return null;
+    const now = Date.now();
+    if (now - staffBaseCache.at < STAFF_BASE_CACHE_MS) return staffBaseCache.value;
+    const lanIp = lanAddress();
+    staffBaseCache = { at: now, value: lanIp ? `http://${lanIp}:${port}` : null };
+    return staffBaseCache.value;
+  }
 
   const ctrl = createController({
     host: config.SOCKET_IP || '127.0.0.1',
@@ -171,6 +182,7 @@ function createKioskServer({
       order: dispenseOrder,
       pending: publicOrder(orders.current()),
       lastClosed: publicOrder(closed[0] || null),
+      staffBase: staffBase(),
     };
   }
   function push() {
@@ -453,7 +465,7 @@ function createKioskServer({
     if (url === '/staff' || url.startsWith('/staff/')) return staffRoutes(req, res, url);
     if (req.method === 'GET' && url === '/api/state') {
       return json(res, 200, {
-        products, idleSeconds, cashReady: staff.length > 0, staffTablet, staffBase, ...snapshot(),
+        products, idleSeconds, cashReady: staff.length > 0, staffTablet, ...snapshot(),
       });
     }
     if (req.method === 'GET' && url === '/api/stream') return stream(req, res);
