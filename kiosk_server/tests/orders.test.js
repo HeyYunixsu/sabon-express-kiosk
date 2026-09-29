@@ -81,6 +81,14 @@ test('find returns null for an order it never saw', () => {
   assert.strictEqual(b.find('A-9'), null);
 });
 
+test('lastNumber carries the count on after a restart', () => {
+  const seen = [];
+  const { b } = book({ lastNumber: (d) => { seen.push(d); return 5; } });
+  const o = b.create(items);
+  assert.strictEqual(o.number, 'A-6');
+  assert.deepStrictEqual(seen, ['20260928']);
+});
+
 test('yesterday\'s closed orders are gone after midnight even before a new order', () => {
   const { b, at } = book();
   b.cancel(b.create(items), 'customer');

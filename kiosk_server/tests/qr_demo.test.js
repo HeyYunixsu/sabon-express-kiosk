@@ -40,7 +40,7 @@ test('QR demo: the phone pays, the machine arms, the payment is logged qr_demo',
   await until(() => arms(stub).length === 1);
   const pay = k.rows('payments.jsonl')[0];
   assert.deepStrictEqual([pay.method, pay.staff, pay.via, pay.amount], ['qr_demo', 'QR demo', 'phone', 20]);
-  assert.strictEqual(k.rows('orders.jsonl')[0].method, 'qr');
+  assert.strictEqual(k.rows('orders.jsonl').find((r) => r.closed).method, 'qr');
 
   const again = await k.post('/pay/api/confirm', { number: n });
   assert.deepStrictEqual([again.code, again.body.error], [409, 'not_waiting']);

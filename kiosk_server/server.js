@@ -26,6 +26,7 @@ const { readJsonl, logPaths, salesToday, openCredits } = require('./lib/logs');
 const MAX_QTY = 20;
 const MAX_PRICE = 10000;   // the controller's own limit, controller/includes/hardware_config.h
 const CREDIT_DAYS = 7;     // how far back Waiting credits looks
+const ORDER_DAYS = 7;      // how far back the dashboard's order list looks
 
 function loadEnv(file) {
   const vars = {};
@@ -97,6 +98,9 @@ function createKioskServer({
   if (letterRaw && !letterValid) {
     log(`[kiosk] KIOSK_LETTER "${letterRaw}" is not a single letter A-Z - using A`);
   }
+  // The staff dashboard's kiosk card.
+  const kioskName = (config.KIOSK_NAME || '').trim() || `Kiosk ${letter}`;
+  const kioskLocation = (config.KIOSK_LOCATION || '').trim();
   const timeoutMs = orderTimeoutMs || clampInt(config.ORDER_PAY_TIMEOUT_S, 60, 900, 180) * 1000;
 
   // A record that cannot be written must not break the sale in front of the
@@ -155,6 +159,16 @@ function createKioskServer({
   const orders = createOrderBook({
     letter,
     timeoutMs,
+    // After a restart, carry on today's numbering from the orders log, so a
+    // reference is never used twice in one day -- including an order that
+    // was still waiting when the process died (see the "created" row below).
+    lastNumber: (d) => {
+      const re = new RegExp(`^${d}-${letter}-(\\d+)$`);   // built once per call, not per row
+      return readJsonl(ordersLog).reduce((max, o) => {
+        const m = re.exec(String(o.reference || ''));
+        return m ? Math.max(max, Number(m[1])) : max;
+      }, 0);
+    },
     onClose: (o) => {
       record(ordersLog, {
         reference: o.reference, method: o.method, items: itemsText(o.items), amount: o.amount,
@@ -328,6 +342,13 @@ function createKioskServer({
     if (p.code) return json(res, p.code, p.body);
     if (body.amount !== p.amount) return json(res, 409, { error: 'price_changed', amount: p.amount });
     const o = orders.create(p.items, method);
+    // orders.jsonl is otherwise written only when an order closes (onClose,
+    // below) -- an order still waiting when the process dies would leave no
+    // row there, and lastNumber would hand its number out again on restart.
+    // No `closed` field: todaySummary, dayStats and /staff/api/orders all key
+    // on `closed` and correctly ignore this row; lastNumber keys on
+    // `reference` alone and sees it.
+    record(ordersLog, { reference: o.reference, method: o.method, status: 'created', created: stamp(new Date(o.createdAt)) });
     log(`[kiosk] order ${o.number} P${o.amount}: ${itemsText(o.items)}`);
     push();
     json(res, 200, { order: publicOrder(o) });
@@ -393,21 +414,98 @@ function createKioskServer({
   const staffName = (req) => { const s = sessions.get(tokenFrom(req)); return s ? s.name : null; };
 
   const today = () => stamp().slice(0, 10);
-  const onToday = (field) => (r) => String(r[field] || '').startsWith(today());
+  // The day computed once per call, not once per row filtered.
+  const onToday = (field) => { const t = today(); return (r) => String(r[field] || '').startsWith(t); };
 
   // Today's cash and orders, from the logs so they survive a restart. A QR
   // demo payment is pretend money, not cash in the till: rows without a
   // method are older logs, from before the demo existed, and count as cash.
   const isCash = (p) => !p.method || p.method === 'cash';
+  // One closed order as the staff page lists it.
+  const orderRow = (o) => ({
+    number: String(o.reference).split('-').slice(1).join('-'),
+    amount: Number(o.amount) || 0, status: o.status, reason: o.reason, by: o.by, closed: o.closed,
+    method: o.method || 'cash',
+  });
+
+  const dayOf = (offset) => stamp(new Date(Date.now() - offset * 86400000)).slice(0, 10);
+  const hourOf = (d) => Number(String(d).slice(11, 13)) || 0;
+
+  // Polled every second per open staff page, and the logs never rotate --
+  // readJsonl returns the very same array object while its file is
+  // unchanged, so that identity (plus the day, in case of a rollover with no
+  // file write at all) is enough to tell a genuinely new result is needed.
+  let todaySummaryCache = { orders: null, payments: null, day: null, result: null };
   function todaySummary() {
-    const pays = readJsonl(paymentsLog).filter(onToday('date_created')).filter(isCash);
-    return {
+    const orders = readJsonl(ordersLog);
+    const payments = readJsonl(paymentsLog);
+    const day = dayOf(0);
+    const c = todaySummaryCache;
+    if (c.orders === orders && c.payments === payments && c.day === day) return c.result;
+    const pays = payments.filter(onToday('date_created')).filter(isCash);
+    const result = {
       paid: pays.length,
       total: pays.reduce((a, p) => a + (Number(p.amount) || 0), 0),
-      orders: readJsonl(ordersLog).filter(onToday('closed')).slice(-20).reverse().map((o) => ({
-        number: String(o.reference).split('-').slice(1).join('-'),
-        amount: Number(o.amount) || 0, status: o.status, reason: o.reason, by: o.by, closed: o.closed,
-      })),
+      orders: orders.filter(onToday('closed')).slice(-20).reverse().map(orderRow),
+    };
+    todaySummaryCache = { orders, payments, day, result };
+    return result;
+  }
+
+  // The dashboard's cards: a day's closed orders and cash, and that day by
+  // the hour for the sparklines. Cancelled counts expired too -- both are
+  // orders that did not become a sale.
+  function dayStats(d) {
+    const hourly = { paid: Array(24).fill(0), cancelled: Array(24).fill(0), sales: Array(24).fill(0) };
+    let paid = 0;
+    let cancelled = 0;
+    let sales = 0;
+    for (const o of readJsonl(ordersLog)) {
+      if (!String(o.closed || '').startsWith(d)) continue;
+      if (o.status === 'paid') { paid++; hourly.paid[hourOf(o.closed)]++; }
+      else { cancelled++; hourly.cancelled[hourOf(o.closed)]++; }
+    }
+    for (const p of readJsonl(paymentsLog)) {
+      if (!String(p.date_created || '').startsWith(d) || !isCash(p)) continue;
+      const a = Number(p.amount) || 0;
+      sales += a;
+      hourly.sales[hourOf(p.date_created)] += a;
+    }
+    return { paid, cancelled, sales, hourly };
+  }
+
+  // Same reasoning as todaySummaryCache above: dayStats loops every order and
+  // every payment row, twice, so this must not run again every second poll
+  // when nothing on disk changed.
+  let dashboardCache = { orders: null, payments: null, day: null, result: null };
+  function dashboardStats() {
+    const orders = readJsonl(ordersLog);
+    const payments = readJsonl(paymentsLog);
+    const day = dayOf(0);
+    const c = dashboardCache;
+    if (c.orders === orders && c.payments === payments && c.day === day) return c.result;
+    const { hourly: _unused, ...yesterday } = dayStats(dayOf(1));
+    const result = { today: dayStats(dayOf(0)), yesterday };
+    dashboardCache = { orders, payments, day, result };
+    return result;
+  }
+
+  // The dashboard's Kiosk Status list. uploadQueue is the sales still waiting
+  // in TRANSACTION_DIR for the uploader; lastSynced is the newest sale the
+  // cloud has confirmed this month (the uploader's archive).
+  function kioskStatus() {
+    const slots = ctrl.status ? ctrl.status.slots : [];
+    let uploadQueue = 0;
+    try { uploadQueue = fs.readdirSync(logs.transactions).filter((n) => n.endsWith('.json')).length; } catch (_) { /* none yet */ }
+    const archive = readJsonl(path.join(logs.salesArchive, `sales-${dayOf(0).slice(0, 7)}.jsonl`));
+    return {
+      pumpsReady: slots.filter((s) => !s.empty).length,
+      pumps: SLOTS,
+      empty: slots.filter((s) => s.empty).map((s) => products[s.slot - 1].name),
+      paused: !!(ctrl.status && ctrl.status.paused),
+      cashReady: staff.length > 0,
+      uploadQueue,
+      lastSynced: archive.length ? archive[archive.length - 1].date_created || null : null,
     };
   }
 
@@ -418,6 +516,17 @@ function createKioskServer({
       pending: publicOrder(orders.current()),
       today: todaySummary(),
       qrDemo,
+      kiosk: { name: kioskName, location: kioskLocation },
+      stats: dashboardStats(),
+      status: kioskStatus(),
+      waitingCredits: openCredits(readJsonl(logs.unclaimed), readJsonl(staffLog), creditSince()).length,
+      attention: readJsonl(logs.interrupted).filter(onToday('date_created')).length,
+      // The Pi's own clock decides "today" and "this hour" -- a phone or
+      // laptop looking at the dashboard must not use its own, possibly wrong
+      // or differently-zoned, clock for the Transactions Today filter or the
+      // sparklines' current hour.
+      day: dayOf(0),
+      hour: new Date().getHours(),
     };
   }
 
@@ -472,6 +581,7 @@ function createKioskServer({
         machineId: config.machineId || '',
         online: ctrl.online,
         staffBase: staffBase(),
+        qrDemo,
         stock: ctrl.status ? ctrl.status.slots.map((s) => ({ slot: s.slot, empty: s.empty })) : [],
       },
       busy: refused ? refused[1].error : null,
@@ -646,6 +756,20 @@ function createKioskServer({
       if (req.method === 'GET' && url === '/staff/api/me') return json(res, 200, { name });
       if (req.method === 'GET' && url === '/staff/api/state') return json(res, 200, staffState());
       if (req.method === 'GET' && url === '/staff/api/tools') return json(res, 200, staffTools());
+      if (req.method === 'GET' && url === '/staff/api/orders') {
+        const since = dayOf(ORDER_DAYS - 1);
+        const rows = readJsonl(ordersLog).filter((o) => String(o.closed || '') >= since);
+        // Totals over every row in the window, not the 200 the table actually
+        // gets -- a busy week must not under-report itself once it passes the
+        // cap. cash mirrors isCash's rule: no method on an old row is cash.
+        const cashRows = rows.filter((o) => o.status === 'paid' && isCash(o));
+        const totals = {
+          orders: rows.length,
+          paid: cashRows.length,
+          cash: cashRows.reduce((a, o) => a + (Number(o.amount) || 0), 0),
+        };
+        return json(res, 200, { orders: rows.slice(-200).reverse().map(orderRow), totals });
+      }
       if (req.method === 'POST' && url === '/staff/api/price') return staffSetPrice(req, res, name);
       if (req.method === 'POST' && url === '/staff/api/prime') return staffPrime(req, res, name);
       if (req.method === 'POST' && url === '/staff/api/credits/give-back') return staffCredit(req, res, name, 'give_back');

@@ -122,7 +122,7 @@ Ports: controller **8080** (`SOCKET_PORT`), kiosk server **3000**
 | `kiosk_server/public/` | The screens: `index.html`, `css/kiosk.css`, `js/kiosk.js` |
 | `kiosk_server/lib/orders.js` | The one waiting order: number, frozen price, 3-minute life |
 | `kiosk_server/lib/sessions.js`, `lib/access.js` | Staff sign-in; what the shop Wi-Fi may reach |
-| `kiosk_server/public/staff/` | The staff tablet page |
+| `kiosk_server/public/staff/` | The staff dashboard (tablet/laptop): Overview, Transactions, Kiosk Health, Inventory, Settings |
 | `kiosk_server/lib/logs.js` | Reads the controller's and uploader's records for the staff tools, cached |
 | `CONFIG/config.env.sample` | Every setting. `CONFIG/README.md` explains each |
 | `docs/INSTALLATION.md`, `docs/QUICK_INSTALL.md` | Pi setup. Copied from the cashier product, adapted in piece 5 |

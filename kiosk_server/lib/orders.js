@@ -9,7 +9,7 @@
 
 const { dayKey } = require('./records');
 
-function createOrderBook({ letter = 'A', timeoutMs = 180000, now = Date.now, onClose = () => {} } = {}) {
+function createOrderBook({ letter = 'A', timeoutMs = 180000, now = Date.now, onClose = () => {}, lastNumber = () => 0 } = {}) {
   let day = '';
   let count = 0;
   let waiting = null;
@@ -19,7 +19,9 @@ function createOrderBook({ letter = 'A', timeoutMs = 180000, now = Date.now, onC
   // ordered yet -- the staff tablet asks for "today" all night.
   function rollDay() {
     const d = dayKey(new Date(now()));
-    if (d !== day) { day = d; count = 0; closed.length = 0; }
+    // The highest number already used on day d (0 if none), so a restart
+    // carries on the day's numbering.
+    if (d !== day) { day = d; count = lastNumber(d); closed.length = 0; }
     return d;
   }
 

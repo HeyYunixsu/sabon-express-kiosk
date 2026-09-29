@@ -87,7 +87,7 @@ test('staff can cancel the waiting order', async (t) => {
   const r = await k.post('/staff/api/orders/cancel', { number: 'A-1' }, headers);
   assert.strictEqual(r.code, 200);
   assert.deepStrictEqual(arms(stub), []);
-  const row = k.rows('orders.jsonl')[0];
+  const row = k.rows('orders.jsonl').find((r) => r.closed);
   assert.deepStrictEqual([row.status, row.reason, row.by], ['cancelled', 'staff', 'Ana']);
   const again = await k.post('/staff/api/orders/paid', { number: 'A-1' }, headers);
   assert.deepStrictEqual([again.code, again.body.error], [409, 'not_waiting']);
