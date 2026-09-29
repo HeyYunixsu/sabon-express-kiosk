@@ -1,12 +1,16 @@
 'use strict';
-// Staff tablet page: sign in once per shift, see the kiosk's waiting order,
-// mark it paid or cancel it. Polls the server once a second -- on the shop
-// Wi-Fi that is live enough and needs nothing more than plain fetch.
+// Staff dashboard: sign in once per shift, see the kiosk's waiting order,
+// mark it paid or cancel it, and the day's numbers and tools. Polls the
+// server once a second -- on the shop Wi-Fi that is live enough and needs
+// nothing more than plain fetch.
 
 (() => {
   const $ = (id) => document.getElementById(id);
   const peso = (n) => '₱' + n;
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const icon = (name) => `<svg class="i"><use href="#i-${name}"/></svg>`;
+  const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const VIEWS = ['overview', 'transactions', 'health', 'inventory', 'settings'];
 
   // A scanned QR opens /staff/order/A-27: that order gets looked up and,
   // if it is not the one waiting, what happened to it is shown.
@@ -25,9 +29,15 @@
   let focusNote = '';
   let dialogAction = null;
   let audio = null;
-  let tab = 'counter';
+  let view = 'overview';
+  try { const v = sessionStorage.getItem('staff-view'); if (VIEWS.includes(v)) view = v; } catch (_) { /* no storage */ }
+  const range = { overview: 'today', transactions: 'today' };
+  let week = null;              // the 7-day orders, from /staff/api/orders
+  let weekTimer = null;
+  let weekGen = 0;
   let tools = null;
   let toolsTimer = null;
+  let toolsGen = 0;
   let toastTimer = null;
   const lastHtml = {};
 
@@ -43,13 +53,12 @@
     }
   }
 
-  function showView(v) {
+  // Signed out: the sign-in card. Signed in: the dashboard.
+  function showScreen(v) {
     $('v-login').hidden = v !== 'login';
-    $('s-tabs').hidden = v !== 'main';
-    $('s-me').hidden = v !== 'main';
-    $('s-out').hidden = v !== 'main';
-    if (v === 'main') showTab(tab);
-    else { $('v-main').hidden = true; $('v-tools').hidden = true; }
+    $('app').hidden = v !== 'main';
+    if (v === 'main') showView(view);
+    else { clearTimeout(toolsTimer); clearTimeout(weekTimer); }
   }
 
   // A short two-note chime for a new order. Browsers only allow sound after a
@@ -107,21 +116,51 @@
   $('s-out').addEventListener('click', async () => {
     await api('/staff/api/logout', {});
     me = null;
-    showView('login');
+    showScreen('login');
     renderLogin('');
+  });
+
+  // ---- sections -----------------------------------------------------------------
+  // Overview reads /staff/api/state only; the other sections also poll the
+  // tools every 3 s while open.
+  function showView(name) {
+    view = VIEWS.includes(name) ? name : 'overview';
+    for (const v of VIEWS) $(`v-${v}`).hidden = v !== view;
+    for (const b of document.querySelectorAll('#s-nav button')) b.classList.toggle('on', b.dataset.view === view);
+    try { sessionStorage.setItem('staff-view', view); } catch (_) { /* no storage */ }
+    clearTimeout(toolsTimer);
+    // Overview reads the tools once, for the needs-attention banner.
+    if (view === 'overview') loadTools(true); else loadTools();
+    loadWeek();
+    renderBusy();
+    renderOrders();
+  }
+  $('s-nav').addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-view]');
+    if (b) showView(b.dataset.view);
+  });
+  // Quick actions, the table's link and the banner: go to a section, and
+  // to a card in it.
+  document.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-go]');
+    if (!b) return;
+    showView(b.dataset.go);
+    const to = b.dataset.scroll && $(b.dataset.scroll);
+    if (to) to.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    else window.scrollTo(0, 0);
   });
 
   // ---- main -------------------------------------------------------------------
   function start() {
-    $('s-me').textContent = `Signed in as ${me}`;
-    showView('main');
+    $('s-me').innerHTML = `${icon('user')}Staff: ${esc(me)}`;
+    showScreen('main');
     if (focus) lookup(focus);
     if (!polling) { polling = true; poll(); }
   }
 
   async function poll() {
     const r = await api('/staff/api/state');
-    if (r.code === 401) { polling = false; me = null; showView('login'); renderLogin(''); return; }
+    if (r.code === 401) { polling = false; me = null; showScreen('login'); renderLogin(''); return; }
     if (r.code === 200) {
       // Back in touch: take down the Wi-Fi warning, and only that.
       if (netDown) { netDown = false; $('w-msg').textContent = ''; }
@@ -145,13 +184,30 @@
       : `Order ${o.number} was cancelled (${o.reason}${o.by ? `, ${o.by}` : ''}) — do not take payment.`;
   }
 
+  const hm = (d) => `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  const dateOf = (d) => `${MONTHS[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
+
   function render() {
     if (!state) return;
     $('s-demo').hidden = !state.qrDemo;
     const st = $('s-state');
-    st.className = `s-state is-${state.machine}`;
-    st.querySelector('b').textContent = { ready: 'Kiosk ready', dispensing: 'Dispensing', offline: 'Kiosk offline' }[state.machine];
+    st.className = `d-chip is-${state.machine}`;
+    st.querySelector('b').textContent = { ready: 'Online', dispensing: 'Dispensing', offline: 'Offline' }[state.machine];
+    $('k-name').textContent = state.kiosk.name;
+    $('k-loc').hidden = !state.kiosk.location;
+    $('k-loc').querySelector('span').textContent = state.kiosk.location;
+    $('s-sys').classList.toggle('is-off', !state.online);
+    $('s-sys-word').textContent = state.online ? 'System Online' : 'System Offline';
 
+    renderHero();
+    renderKpis();
+    renderStatus();
+    renderOrders();
+    $('q-credits').hidden = !state.waitingCredits;
+    $('q-credits').textContent = state.waitingCredits;
+  }
+
+  function renderHero() {
     const o = state.pending;
     if (o && seenFirstState && o.number !== lastPending) chime();
     seenFirstState = true;
@@ -168,32 +224,162 @@
     $('w-title').textContent = qr ? 'Waiting for QR payment (demo)' : 'Waiting for payment';
     $('w-paid').hidden = qr;
     if (o) {
-      $('w-items').innerHTML = o.items.map((i) => `<li>
+      put('w-items', o.items.map((i) => `<li>
         <img src="${esc(i.img)}" alt=""><b>${esc(i.name)}</b><span class="q">× ${i.qty}</span><span class="p">${peso(i.price * i.qty)}</span>
-      </li>`).join('');
+      </li>`).join(''));
       $('w-total').textContent = peso(o.amount);
       const left = Math.max(0, o.remainingMs - (Date.now() - stateAt));
       const s = Math.ceil(left / 1000);
       const t = $('w-timer');
       t.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')} left to pay`;
       t.classList.toggle('is-low', left < 30000);
+      $('w-bar').style.width = `${o.totalMs ? Math.min(100, (left / o.totalMs) * 100) : 0}%`;
+      $('w-bar').classList.toggle('is-low', left < 30000);
       $('w-paid').textContent = `Mark as paid · ${peso(o.amount)}`;
       $('w-paid').disabled = busy || state.machine === 'offline';
       $('w-cancel').disabled = busy;
+    } else {
+      const s = state.status;
+      const [tone, title, text] = !state.online
+        ? ['bad', 'Kiosk is Offline', 'The kiosk is not answering. Check that it is switched on.']
+        : s.empty.length ? ['warn', 'A tank is empty', `${s.empty.join(', ')} — refill, then run an air clear.`]
+        : state.machine === 'dispensing' ? ['ok', 'Dispensing…', 'A customer is pouring.']
+        : ['ok', 'Kiosk is Running Smoothly', 'All systems are normal. Ready for orders.'];
+      card.dataset.tone = tone;
+      $('h-title').textContent = title;
+      $('h-text').textContent = text;
+      const d = new Date(stateAt);
+      $('h-updated').textContent = `Last updated: ${dateOf(d)} ${hm(d)}:${String(d.getSeconds()).padStart(2, '0')}`;
     }
     if (focusNote && (!o || o.number !== focus)) {
       $('w-msg').className = 's-msg';
       $('w-msg').textContent = focusNote;
     }
-
-    const today = state.today;
-    $('t-sum').textContent = `${today.paid} paid · ${peso(today.total)}`;
-    $('t-list').innerHTML = today.orders.map((x) => `<li>
-      <span>${esc(x.number)}</span><span>${peso(x.amount)}</span>
-      <span class="st-${esc(x.status)}">${x.status === 'paid' ? `Paid · ${esc(x.by)}` : x.status === 'expired' ? 'Expired'
-        : `Cancelled · ${esc(x.reason)}${x.by ? ` · ${esc(x.by)}` : ''}`} · ${esc((x.closed || '').slice(11, 16))}</span>
-    </li>`).join('') || '<li><span></span><span></span><span>No orders yet today.</span></li>';
   }
+
+  // ---- stat cards ---------------------------------------------------------------
+  function delta(now, before) {
+    if (before === 0) return now > 0 ? '<span class="up">new today</span>' : '<span class="flat">— same as yesterday</span>';
+    if (now === before) return '<span class="flat">— same as yesterday</span>';
+    const pct = Math.round((Math.abs(now - before) / before) * 100);
+    return `<span class="${now > before ? 'up' : 'down'}">${now > before ? '↑' : '↓'} ${pct}%</span> <span class="nw">vs. yesterday</span>`;
+  }
+
+  // Running total of the hourly values up to this hour, as a line and a
+  // faint area under it.
+  function spark(hourly) {
+    const upTo = new Date().getHours();
+    let sum = 0;
+    const pts = (hourly || []).slice(0, upTo + 1).map((v) => (sum += v));
+    const max = Math.max(1, ...pts);
+    const n = Math.max(1, pts.length - 1);
+    const xy = (pts.length ? pts : [0, 0]).map((v, i) => `${((i / n) * 200).toFixed(1)},${(44 - (v / max) * 38).toFixed(1)}`);
+    if (xy.length === 1) xy.push(`200,${xy[0].split(',')[1]}`);
+    const line = xy.join(' ');
+    return `<polygon points="0,48 ${line} 200,48"/><polyline points="${line}"/>`;
+  }
+
+  function kpi(id, value, deltaHtml, sub, hourly) {
+    const c = $(id);
+    c.querySelector('.k-val').textContent = value;
+    c.querySelector('.k-delta').innerHTML = deltaHtml;
+    c.querySelector('.k-delta').hidden = !deltaHtml;
+    c.querySelector('.k-sub').textContent = sub;
+    c.querySelector('.k-sub').hidden = !sub;
+    const svg = spark(hourly);
+    if (lastHtml[id] !== svg) { lastHtml[id] = svg; c.querySelector('.k-spark').innerHTML = svg; }
+  }
+
+  function renderKpis() {
+    const { today: t, yesterday: y } = state.stats;
+    const o = state.pending;
+    kpi('k-sales', peso(t.sales), delta(t.sales, y.sales), `${t.paid} ${t.paid === 1 ? 'order' : 'orders'}`, t.hourly.sales);
+    kpi('k-paid', t.paid, delta(t.paid, y.paid), '', t.hourly.paid);
+    kpi('k-pending', o ? 1 : 0, '', o ? `Order ${o.number}` : 'No pending', null);
+    kpi('k-cancel', t.cancelled, delta(t.cancelled, y.cancelled), '', t.hourly.cancelled);
+  }
+
+  // ---- kiosk status -------------------------------------------------------------
+  // Each sub-line is HTML, every part from the server escaped.
+  function statusRows() {
+    const s = state.status;
+    const synced = s.lastSynced ? `Last confirmed ${esc(String(s.lastSynced).slice(11, 16))}` : 'None this month';
+    const queued = s.uploadQueue ? `${s.uploadQueue} ${s.uploadQueue === 1 ? 'sale' : 'sales'} waiting to upload` : 'All sales uploaded';
+    return [
+      ['conn', 'wifi', 'Device Connection', state.online ? 'Controller connected' : 'Controller not answering',
+        state.online ? ['ok', 'Online'] : ['bad', 'Offline']],
+      ['pay', 'card', 'Payment', s.cashReady ? `Cash ready${state.qrDemo ? ', QR demo on' : ''}` : 'No staff PINs set up',
+        s.cashReady ? ['ok', 'OK'] : ['bad', 'Setup']],
+      ['pump', 'drop', 'Pump Status', `${s.pumpsReady}/${s.pumps} pumps ready`,
+        !state.online ? ['off', '—'] : s.paused ? ['warn', 'Paused'] : s.pumpsReady < s.pumps ? ['warn', 'Check'] : ['ok', 'OK']],
+      ['water', 'waves', 'Water Level', s.empty.length ? `Empty: ${esc(s.empty.join(', '))}` : 'Normal level',
+        s.empty.length ? ['bad', 'Empty'] : ['ok', 'Normal']],
+      ['sync', 'sync', 'Last Sync', `${queued}<br>${synced}`, s.uploadQueue ? ['warn', 'Waiting'] : ['ok', 'OK']],
+    ];
+  }
+
+  function renderStatus() {
+    const rows = statusRows();
+    const html = (pre) => rows.map(([id, ic, title, sub, [tone, word]]) => `<li id="${pre}-${id}" class="is-${tone}">
+      <span class="s-ico">${icon(ic)}</span>
+      <div><b>${title}</b><small>${sub}</small></div>
+      <span class="s-word"><i></i>${word}</span>
+    </li>`).join('');
+    put('st-list', html('st'));
+    put('hx-status', html('hx'));
+  }
+
+  // ---- orders table -------------------------------------------------------------
+  const BADGE = { paid: ['Paid', 'check'], cancelled: ['Cancelled', 'x'], expired: ['Expired', 'clock'] };
+  function orderRows(rows, withDate) {
+    return rows.map((x) => {
+      const [label, ic] = BADGE[x.status] || [x.status, 'clock'];
+      const who = x.method === 'qr' ? 'QR demo' : x.by || (x.reason === 'customer' ? 'customer' : '—');
+      const c = String(x.closed || '');
+      const time = withDate && c ? `${MONTHS[Number(c.slice(5, 7)) - 1]} ${Number(c.slice(8, 10))} · ${c.slice(11, 16)}` : c.slice(11, 16);
+      const why = x.status === 'cancelled' && x.reason ? ` title="Cancelled: ${esc(x.reason)}"` : '';
+      return `<tr class="is-${esc(x.status)}">
+        <td>${esc(x.number)}</td><td>${peso(x.amount)}</td>
+        <td><span class="d-badge b-${esc(x.status)}"${why}><i>${icon(ic)}</i>${esc(label)}</span></td>
+        <td>${esc(who)}</td><td>${esc(time)}</td>
+      </tr>`;
+    }).join('') || `<tr class="is-none"><td colspan="5">${withDate ? 'No orders in the last 7 days.' : 'No orders yet today.'}</td></tr>`;
+  }
+  // Cash only, as today's total counts it: a QR demo payment is pretend money.
+  function paidSum(rows) {
+    const paid = rows.filter((x) => x.status === 'paid' && x.method !== 'qr');
+    return `${paid.length} paid · ${peso(paid.reduce((a, x) => a + x.amount, 0))}`;
+  }
+
+  function renderOrders() {
+    if (!state) return;
+    for (const [which, list, sum, limit] of [['overview', 't-list', 't-sum', 5], ['transactions', 'o-list', 'o-sum', 200]]) {
+      const wk = range[which] === '7d';
+      for (const b of document.querySelectorAll(`.d-switch[data-for="${which}"] button`)) b.classList.toggle('on', b.dataset.range === range[which]);
+      if (wk && !week) { put(list, '<tr class="is-none"><td colspan="5">Loading…</td></tr>'); continue; }
+      const rows = wk ? week : state.today.orders;
+      put(list, orderRows(rows.slice(0, limit), wk));
+      $(sum).textContent = wk ? `${paidSum(rows)} · last 7 days` : `${state.today.paid} paid · ${peso(state.today.total)}`;
+    }
+  }
+
+  // The 7-day list, every 10 s while a table shows it.
+  async function loadWeek() {
+    clearTimeout(weekTimer);
+    const gen = ++weekGen;   // an older load still in flight is dropped
+    if (!me || !['overview', 'transactions'].includes(view) || range[view] !== '7d') return;
+    const r = await api('/staff/api/orders');
+    if (gen !== weekGen) return;
+    if (r.code === 200) { week = r.body.orders; renderOrders(); }
+    weekTimer = setTimeout(loadWeek, 10000);
+  }
+  document.addEventListener('click', (e) => {
+    const b = e.target.closest('.d-switch button[data-range]');
+    if (!b) return;
+    range[b.closest('.d-switch').dataset.for] = b.dataset.range;
+    renderOrders();
+    loadWeek();
+  });
 
   // ---- confirm dialog ---------------------------------------------------------
   function ask(title, text, yesLabel, action) {
@@ -294,35 +480,40 @@
   }
   const failed = (r) => TOOL_MSG[r.body.error || r.body.result] || 'That did not work — try again.';
 
-  function showTab(t) {
-    tab = t;
-    for (const b of document.querySelectorAll('#s-tabs button')) b.classList.toggle('on', b.dataset.tab === t);
-    $('v-main').hidden = t !== 'counter';
-    $('v-tools').hidden = t !== 'tools';
+  // Every 3 s while a tools section is open (once, for Overview's banner).
+  // A 401 is left to the state poll, which signs the page out.
+  async function loadTools(once) {
     clearTimeout(toolsTimer);
-    if (t === 'tools') loadTools();
-  }
-  $('s-tabs').addEventListener('click', (e) => {
-    const b = e.target.closest('button[data-tab]');
-    if (b) showTab(b.dataset.tab);
-  });
-
-  // Every 3 s while Tools is open. A 401 is left to the state poll, which
-  // signs the page out.
-  async function loadTools() {
-    clearTimeout(toolsTimer);
-    if (tab !== 'tools' || !me) return;
+    const gen = ++toolsGen;   // an older load still in flight is dropped
+    if (!me || (view === 'overview' && !once)) return;
     const r = await api('/staff/api/tools');
-    if (r.code === 401) return;
+    if (r.code === 401 || gen !== toolsGen) return;
     if (r.code === 200) { tools = r.body; renderTools(); }
-    toolsTimer = setTimeout(loadTools, 3000);
+    if (view !== 'overview') toolsTimer = setTimeout(loadTools, 3000);
+  }
+
+  // The amber "refused for now" note, on Health and Inventory only.
+  function renderBusy() {
+    const msg = tools && tools.busy ? BUSY_MSG[tools.busy] || '' : '';
+    $('x-busy').hidden = !msg || !['health', 'inventory'].includes(view);
+    $('x-busy').textContent = msg;
+  }
+
+  function renderBanner() {
+    const n = tools ? tools.attention.length : 0;
+    const b = $('d-banner');
+    b.classList.toggle('is-alert', n > 0);
+    if (n) b.dataset.go = 'health'; else delete b.dataset.go;
+    b.disabled = !n;
+    b.querySelector('.q-chev').hidden = !n;
+    $('b-title').textContent = n ? `${n} ${n === 1 ? 'pour needs' : 'pours need'} attention today` : 'Smarter Kiosk. Better Service.';
+    $('b-sub').textContent = n ? 'Cut short and charged in full — settle it with the customer.' : 'Real-time monitoring for a seamless experience.';
   }
 
   function renderTools() {
     const t = tools;
-    const busyMsg = t.busy ? BUSY_MSG[t.busy] || '' : '';
-    $('x-busy').hidden = !busyMsg;
-    $('x-busy').textContent = busyMsg;
+    renderBusy();
+    renderBanner();
 
     // Prices: rows built once, so a poll never overwrites what is being typed.
     const list = $('x-prices');
@@ -346,7 +537,7 @@
 
     $('x-prime-sec').textContent = `${t.primeSeconds} s each`;
     put('x-primes', t.products.map((p) => `<button class="s-tile" type="button" data-slot="${p.slot}"${t.primeBusy ? ' disabled' : ''}>
-      <b>Nozzle ${p.slot}</b><span>${esc(p.name)}</span><small>${t.primesToday[p.slot] || 0} today</small>
+      <img src="${esc(p.img)}" alt=""><b>Nozzle ${p.slot}</b><span>${esc(p.name)}</span><small>${t.primesToday[p.slot] || 0} today</small>
     </button>`).join(''));
 
     $('x-credit-sum').textContent = t.credits.length
@@ -375,11 +566,18 @@
     </li>`).join(''));
 
     const m = t.machine;
+    const stockOf = (slot) => m.stock.find((x) => x.slot === slot);
+    put('x-stock', t.products.map((p) => {
+      const st = stockOf(p.slot);
+      const [cls, word] = !st ? ['off', 'Unknown'] : st.empty ? ['bad', 'Empty'] : ['ok', 'Has stock'];
+      return `<div class="st-card is-${cls}"><img src="${esc(p.img)}" alt=""><b>${esc(p.name)}</b>
+        <small>Tank ${p.slot}</small><span class="d-badge b-${cls}"><i>${icon(st && !st.empty ? 'check' : 'x')}</i>${word}</span></div>`;
+    }).join(''));
     put('x-machine', `<dt>Machine ID</dt><dd>${esc(m.machineId || '—')}</dd>
       <dt>Controller</dt><dd class="${m.online ? 'ok' : 'bad'}">${m.online ? 'Online' : 'Offline'}</dd>
       <dt>Staff page</dt><dd>${esc(m.staffBase ? `${m.staffBase}/staff` : 'No network address')}</dd>
       ${t.products.map((p) => {
-        const st = m.stock.find((x) => x.slot === p.slot);
+        const st = stockOf(p.slot);
         return `<dt>${esc(p.name)}</dt><dd class="${!st ? '' : st.empty ? 'bad' : 'ok'}">${!st ? '—' : st.empty ? 'Empty' : 'Has stock'}</dd>`;
       }).join('')}`);
   }
@@ -440,10 +638,18 @@
     }
   });
 
+  // ---- clock ----------------------------------------------------------------------
+  function tick() {
+    const d = new Date();
+    $('s-clock').textContent = `${dateOf(d)} · ${hm(d)}`;
+  }
+  tick();
+  setInterval(tick, 1000);
+
   // ---- boot ---------------------------------------------------------------------
   (async () => {
     const r = await api('/staff/api/me');
     if (r.code === 200) { me = r.body.name; start(); }
-    else { showView('login'); renderLogin(''); }
+    else { showScreen('login'); renderLogin(''); }
   })();
 })();
