@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0B0E14">
+  <title>Sabon Express · Staff</title>
+  <link rel="stylesheet" href="/staff/staff.css">
+</head>
+<body>
+  <header class="s-top">
+    <img class="s-logo" src="/img/sabon-express-logo.png" alt="Sabon Express">
+    <span class="s-state" id="s-state"><i></i><b>—</b></span>
+    <span class="s-me" id="s-me" hidden></span>
+    <button class="s-btn s-ghost s-out" id="s-out" type="button" hidden>Sign out</button>
+  </header>
+
+  <main>
+    <nav class="s-tabs" id="s-tabs" hidden>
+      <button type="button" data-tab="counter" class="on">Counter</button>
+      <button type="button" data-tab="tools">Tools</button>
+    </nav>
+
+    <!-- Sign in, once per shift -->
+    <section class="s-card s-login" id="v-login" hidden>
+      <h1>Staff sign in</h1>
+      <p>Enter your PIN</p>
+      <div class="s-dots" id="l-dots"></div>
+      <div class="s-msg" id="l-msg" role="alert"></div>
+      <div class="s-keypad" id="l-keypad">
+        <button data-k="1">1</button><button data-k="2">2</button><button data-k="3">3</button>
+        <button data-k="4">4</button><button data-k="5">5</button><button data-k="6">6</button>
+        <button data-k="7">7</button><button data-k="8">8</button><button data-k="9">9</button>
+        <button data-k="clear" class="k-alt">Clear</button><button data-k="0">0</button><button data-k="back" class="k-alt">⌫</button>
+      </div>
+      <button class="s-btn s-primary s-wide" id="l-go" type="button" disabled>Sign in</button>
+    </section>
+
+    <!-- Main: the waiting order and today -->
+    <section id="v-main" hidden>
+      <div class="s-card" id="w-card">
+        <div class="s-card-head">
+          <h2 id="w-title">Waiting for payment</h2>
+          <span class="s-num" id="w-num"></span>
+        </div>
+        <div id="w-body" hidden>
+          <ul class="s-items" id="w-items"></ul>
+          <div class="s-total"><span>Total</span><b id="w-total"></b></div>
+          <div class="s-timer" id="w-timer"></div>
+          <button class="s-btn s-primary s-wide s-big" id="w-paid" type="button">Mark as paid</button>
+          <button class="s-btn s-danger-ghost s-wide" id="w-cancel" type="button">Cancel order</button>
+        </div>
+        <p class="s-empty" id="w-empty">No order waiting.</p>
+        <p class="s-msg" id="w-msg" role="alert"></p>
+      </div>
+
+      <div class="s-card">
+        <div class="s-card-head">
+          <h2>Today</h2>
+          <span class="s-sum" id="t-sum"></span>
+        </div>
+        <ul class="s-log" id="t-list"></ul>
+      </div>
+    </section>
+
+    <!-- Tools: prices, air clear, credits, attention, sales, this machine -->
+    <section id="v-tools" hidden>
+      <p class="s-note" id="x-busy" hidden></p>
+
+      <div class="s-card">
+        <div class="s-card-head"><h2>Prices</h2><span class="s-sum">per press</span></div>
+        <ul class="s-rows" id="x-prices"></ul>
+        <ul class="s-list s-hist" id="x-price-log"></ul>
+      </div>
+
+      <div class="s-card">
+        <div class="s-card-head"><h2>Air clear</h2><span class="s-sum" id="x-prime-sec"></span></div>
+        <p class="s-hint">After a gallon change, push the air out of the hose so the next customer is not charged for air.</p>
+        <div class="s-grid" id="x-primes"></div>
+      </div>
+
+      <div class="s-card">
+        <div class="s-card-head"><h2>Waiting credits</h2><span class="s-sum" id="x-credit-sum"></span></div>
+        <p class="s-hint">Paid for but never poured, last 7 days.</p>
+        <ul class="s-rows" id="x-credits"></ul>
+      </div>
+
+      <div class="s-card">
+        <div class="s-card-head"><h2>Needs attention</h2></div>
+        <p class="s-hint">Pours cut short today. The customer was charged in full — settle it with them.</p>
+        <ul class="s-list" id="x-attention"></ul>
+      </div>
+
+      <div class="s-card">
+        <div class="s-card-head"><h2>Today's sales</h2><span class="s-sum" id="x-sales-sum"></span></div>
+        <ul class="s-list" id="x-sales"></ul>
+        <ul class="s-list" id="x-cash"></ul>
+      </div>
+
+      <div class="s-card">
+        <div class="s-card-head"><h2>This machine</h2></div>
+        <dl class="s-dl" id="x-machine"></dl>
+      </div>
+    </section>
+  </main>
+
+  <!-- One confirm dialog, reused for paid and cancel -->
+  <div class="s-dialog" id="dlg" hidden>
+    <div class="s-card">
+      <h2 id="dlg-title"></h2>
+      <p id="dlg-text"></p>
+      <div class="s-row">
+        <button class="s-btn s-ghost" id="dlg-no" type="button">Back</button>
+        <button class="s-btn s-primary" id="dlg-yes" type="button">Yes</button>
+      </div>
+    </div>
+  </div>
+
+  <p class="s-toast" id="x-msg" role="status" hidden></p>
+
+  <script src="/staff/staff.js"></script>
+</body>
+</html>

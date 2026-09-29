@@ -70,8 +70,11 @@ ATTRACT ──tap──▶ PICK ──▶ PAY ──paid──▶ UNLOCKED ─�
                             └── cash: staff PIN ──────────┘   └── pause/resume
 ```
 
-1. **Attract.** Products and prices, "Tap to start". Shows a "n presses
-   waiting — tap to continue" chip when the machine still owes someone.
+1. **Attract.** Products and prices, "Tap to start".
+   *As built:* no "n presses waiting" chip. It would hand one customer's paid
+   presses to whoever walks up next. Instead, whenever the machine owes
+   presses the kiosk shows the dispense screen, and unused presses expire at
+   `ARM_TIMEOUT_SECONDS` into `UNCLAIMED_LOG` for staff to settle.
 2. **Pick.** The existing product cards with + / −, a running total. Offline or
    empty tanks are shown exactly as the dashboard shows them today.
 3. **Pay.** Two buttons: *Pay with QR* and *Pay cash to staff*. The QR screen
@@ -81,6 +84,13 @@ ATTRACT ──tap──▶ PICK ──▶ PAY ──paid──▶ UNLOCKED ─�
    bar, **Dispense Now**, then tap to pause and tap to resume. The pour stops
    itself at the paid amount. When a product is finished the modal moves to the
    next one.
+   *As built (2026-09-28, owner's revision):* one "Your purchased products"
+   modal holding a card per product — photo, name, quantity, nozzle, and a
+   Dispense button at the bottom. **Each tap pours one unit**, and the card
+   counts them off ("1 of 2 dispensed") until it reads **Dispensed** and its
+   button **Completed**, so nothing can be poured twice. One product pours at
+   a time; that card's button becomes Pause, then Resume. The modal stays open
+   until every unit is poured, then shows **Done**.
 5. **Thank you**, then back to attract after 10 s.
 
 ## Payment rules
@@ -164,8 +174,11 @@ so one firmware serves both products.
   machine info (machine ID, controller state, IP). These are the existing
   panels, moved across.
 - **PINs identify a person.** `config.env` holds `STAFFn_NAME` and
-  `STAFFn_PIN_SHA256` (n = 1..6), so the SD card does not carry the PINs. Five
-  wrong attempts lock the pad for 60 s, and that is logged.
+  `STAFFn_PIN_HASH` (n = 1..6). Five wrong attempts lock the pad for 60 s,
+  and that is logged.
+  *As built:* salted scrypt, not SHA-256. An unsalted SHA-256 of a 4-6 digit
+  PIN is reversed by trying all million PINs in under a second, so it would
+  not keep the PINs off the SD card.
 - **Cash accountability.** Every confirmed payment appends to
   `logs/payments.jsonl`:
 
@@ -180,7 +193,7 @@ so one firmware serves both products.
 ## New config keys
 
 ```
-STAFF1_NAME, STAFF1_PIN_SHA256 … STAFF6_*
+STAFF1_NAME, STAFF1_PIN_HASH … STAFF6_*
 PAYMENT_ONLINE_ENABLED     = 1
 PAYMENT_CREATE_PATH        = /api/v1/machine/payment
 PAYMENT_STATUS_PATH        = /api/v1/machine/payment
@@ -236,8 +249,10 @@ Each piece is its own spec → plan → implementation cycle.
 
 ## Open questions
 
-- **Touchscreen not chosen.** Size and orientation change every screen layout.
-  Decide before piece 2.
+- ~~**Touchscreen not chosen.**~~ *Settled 2026-09-28:* 15.6", mounted
+  landscape, 1920×1080. The screens keep the cashier V2 dashboard's look
+  (header chips, product tiles, cart panel, lock-icon Unlock) at kiosk scale,
+  and Unlock opens a Cash / QR choice, QR disabled until piece 4.
 - **Backend payment endpoints do not exist yet.** Piece 4 is blocked until they
   do; pieces 0-3 are not.
 - **Hygiene.** Wet hands on a touchscreen all day; the enclosure needs a

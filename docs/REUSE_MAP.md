@@ -21,14 +21,19 @@ machine settings, saved prices or build artefacts came across.
 | `docs/INSTALLATION.md`, `docs/QUICK_INSTALL.md` | None yet, beyond a note at the top. Boot config, wiring and calibration apply as written; the dashboard and tablet steps are rewritten in piece 5. |
 | `.gitignore` | Cashier dashboard and design-source entries removed. |
 
-## To copy in piece 2
+## Taken in piece 2
 
-From `cashier_dashboard/public/`, when the kiosk screens are built:
+From `cashier_dashboard/public/`, into `kiosk_server/public/`:
 
-| Path | What it gives the kiosk |
+| Path | Change |
 |---|---|
-| `css/v2.css` | Colour tokens for both themes, the big confirm dialog, buttons, cards. It still holds cashier-only selectors (cart rows, unlock button, tour); prune them as screens are built. |
-| `fonts/`, `img/`, `icons/` | Typefaces, product photos (`img/products/1-6.webp`), the logo. |
+| `img/products/1-6.webp`, `img/sabon-express-logo.png` | None. |
+| `fonts/helvetica-neue-400/700`, `fonts/inter-v20-latin-regular/700` | Only the four faces the kiosk uses; Poppins and the Inter 500/600 cuts were left. |
+| `css/v2.css` | Not copied. Its light-theme colour tokens were carried into `css/kiosk.css`; the rest is tablet layout and cashier components. |
+
+`cashier_dashboard/server.js` was read, not copied: the controller socket and
+the state stream were rewritten in `kiosk_server/lib/controller.js` with the
+Node standard library, so the kiosk needs no Express and no `npm install`.
 
 The staff panels (prices, prime list, today's sales, air clears, waiting
 credits) live in `js/v2.js` alongside the cashier flow. Read them there and
@@ -54,7 +59,7 @@ rebuild what piece 3 needs; the file is not copied whole.
 | Piece | What | Depends on |
 |---|---|---|
 | 1 | `DISPENSE`, `PAUSE`, `RESUME` in the controller | **Done** |
-| 2 | Kiosk server, customer screens (attract, pick, pay cash, pour, thank you), Chromium kiosk launch | Piece 1 |
+| 2 | Kiosk server, customer screens (attract, pick, pay cash, pour, thank you), Chromium kiosk launch | **Done** |
 | 3 | Staff PIN menu: cash confirmation, prices, priming, sales, air clears, credits | Piece 2 |
 | 4 | QR payment: backend creates it, kiosk polls it | Backend endpoints existing |
 | 5 | Install runbook for a kiosk Pi | Pieces 2 and 3 |

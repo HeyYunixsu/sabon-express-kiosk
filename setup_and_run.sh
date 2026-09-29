@@ -272,7 +272,46 @@ pm2_start_python \
   "$SCRIPT_DIR/uploaders" \
   "$SCRIPT_DIR/uploaders"
 
-# 05_Kiosk_Server -- not built yet (build order piece 2). Its pm2 start goes here.
+# 05_Kiosk_Server — kiosk_server/server.js. Node standard library only, so
+# there is no npm install step.
+if pm2_process_exists "05_Kiosk_Server"; then
+  log "[05_Kiosk_Server] Already registered — restarting"
+  sudo pm2 restart "05_Kiosk_Server"
+else
+  log "[05_Kiosk_Server] Starting server.js"
+  sudo env NODE_ENV=production pm2 start "$SCRIPT_DIR/kiosk_server/server.js" \
+    --name "05_Kiosk_Server" \
+    --cwd  "$SCRIPT_DIR/kiosk_server" \
+    --log  "$SCRIPT_DIR/kiosk_server/pm2_05_Kiosk_Server.log" \
+    --time
+fi
+
+# The touchscreen: Chromium full screen on the kiosk page at every desktop
+# login. An XDG autostart entry rather than a PM2 process, because the browser
+# must run as the desktop user inside their session, not as root.
+chmod +x "$SCRIPT_DIR/kiosk_server/launch_browser.sh"
+AUTOSTART_DIR="$DISPLAY_USER_HOME/.config/autostart"
+sudo -u "$DISPLAY_USER" mkdir -p "$AUTOSTART_DIR"
+sudo -u "$DISPLAY_USER" tee "$AUTOSTART_DIR/sabon-kiosk.desktop" > /dev/null <<EOF
+[Desktop Entry]
+Type=Application
+Name=Sabon Express Kiosk
+Exec=$SCRIPT_DIR/kiosk_server/launch_browser.sh
+X-GNOME-Autostart-enabled=true
+EOF
+log "[kiosk] Browser autostart installed: $AUTOSTART_DIR/sabon-kiosk.desktop"
+
+# Where staff open the tablet page, when counter cash is switched on. The
+# server strips a matching pair of quotes, so "1" and '1' also mean on.
+if grep -qE '^[[:space:]]*STAFF_TABLET[[:space:]]*=[[:space:]]*["'"'"']?1["'"'"']?[[:space:]]*$' "$SCRIPT_DIR/CONFIG/config.env" 2>/dev/null; then
+  KPORT="$(sed -n 's/^[[:space:]]*KIOSK_PORT[[:space:]]*=[[:space:]]*//p' "$SCRIPT_DIR/CONFIG/config.env" | tail -1 | tr -d '\r"')"
+  log "[kiosk] Staff tablet page: http://$(hostname -I | awk '{print $1}'):${KPORT:-3000}/staff"
+fi
+
+# A kiosk screen that goes black after ten minutes looks switched off.
+if command -v raspi-config &>/dev/null; then
+  sudo raspi-config nonint do_blanking 1 && log "[kiosk] Screen blanking disabled"
+fi
 
 # Register PM2 as a systemd service so it auto-starts on every reboot.
 # This must run BEFORE pm2 save — the save writes the process list that the

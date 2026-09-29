@@ -9,16 +9,22 @@ This repo was started from the cashier product's machine core. What was taken,
 what was left and why is in `docs/REUSE_MAP.md`. The design, and the build
 order below, is `docs/superpowers/specs/2026-09-25-standalone-kiosk-design.md`.
 
-**The goal is a working kiosk a customer can use**, on a 15.6" touchscreen in
-portrait, **1080×1920**. Design every screen for that size.
+**The goal is a working kiosk a customer can use**, on a 15.6" touchscreen
+mounted **landscape, 1920×1080**. Design every screen for that size.
+
+**The look is the cashier's V2 dashboard, made into a kiosk, in black and blue** (owner,
+2026-09-28): V2's header card with status chips and the logo, V2 product tiles
+(photo, badge, red − / green + steppers), the cart panel with Quantity / Total
+Amount and a lock-icon **Unlock**. Keep that identity; change scale and
+layout for a customer's finger (nothing under 72px, main actions 96px+).
 
 ## Status
 
 | Piece | What | State |
 |---|---|---|
 | 1 | Controller `DISPENSE`, `PAUSE`, `RESUME` | **Done**, tested |
-| 2 | Kiosk server and customer screens, cash only | Next |
-| 3 | Staff PIN menu | After 2 |
+| 2 | Kiosk server and customer screens, cash only | **Done**, tested end to end against the real controller; not yet on a Pi |
+| 3 | Counter cash + staff tablet: stage 1 (orders, mark paid) and stage 2 (staff tools) | **Done** — `docs/superpowers/specs/2026-09-28-counter-cash-design.md` |
 | 4 | QR payment | Blocked: backend payment endpoints do not exist yet |
 | 5 | Install runbook for a kiosk Pi | Last |
 
@@ -40,10 +46,33 @@ PATH="<winlibs>/mingw64/bin:$PATH" ./tests/test_runner.exe
 ```
 
 ```bash
-# On a Pi: what is running, and the controller's live log
+# Kiosk server: tests (Node built-in runner, no dependencies)
+cd kiosk_server && npm test
+
+# Staff PIN hash for config.env
+node kiosk_server/tools/hash_pin.js 4821
+
+# On a Pi: what is running, and the live logs
 sudo pm2 list
 sudo pm2 logs 01_Dispenser_Controller
+sudo pm2 logs 05_Kiosk_Server
 ```
+
+### Trying the whole kiosk on a PC
+
+The controller builds against mock GPIO, so the real controller, the kiosk
+server and the screens all run on Windows:
+
+1. `CONFIG/config.env` from the sample, plus a `STAFF1_NAME` and
+   `STAFF1_PIN_HASH`.
+2. `cd controller && mingw32-make`, then run `main.exe` (compiler `bin` first
+   on the PATH, as above).
+3. `cd kiosk_server && node server.js`.
+4. Open `http://localhost:3000/`. The page scales its 1920×1080 stage to fit
+   any window, so an ordinary browser window shows it as the kiosk will.
+
+Sales land in `transaction/` (nothing uploads them unless the uploaders run)
+and cash payments in `logs/payments.jsonl`.
 
 ## Architecture
 
@@ -53,6 +82,10 @@ touchscreen (Chromium, kiosk mode, same Pi)
         └─ backend API: QR payments                 uploaders ◀── sale files ──┘
                                                         └──▶ backend API: sales, machine health
 ```
+
+With `STAFF_TABLET = 1`, the same kiosk server also answers on the shop Wi-Fi
+(`0.0.0.0:KIOSK_PORT`) — `/staff` and its pictures/fonts only, nothing that
+orders, unlocks or pours (`lib/access.js`).
 
 The controller owns the machine and takes commands over TCP. It does not care
 who is connected, so the kiosk replaces the cashier dashboard without touching
@@ -66,7 +99,11 @@ PM2 runs five processes, registered by `setup_and_run.sh`:
 | `02_Water_Sensors` | Tank empty detection | `uploaders/water_level_monitoring.py` |
 | `03_Transaction_Uploader` | Sales to the API, with a local queue | `uploaders/transaction_uploader.py` |
 | `04_Status_Uploader` | Machine health to the API | `uploaders/status_uploader.py` |
-| `05_Kiosk_Server` | **Not built yet** (piece 2) | — |
+| `05_Kiosk_Server` | Customer screens, cash confirmation, pour control | `kiosk_server/` |
+
+The touchscreen itself is Chromium in kiosk mode, started at desktop login by
+`~/.config/autostart/sabon-kiosk.desktop` (installed by `setup_and_run.sh`),
+which runs `kiosk_server/launch_browser.sh`.
 
 Ports: controller **8080** (`SOCKET_PORT`), kiosk server **3000**
 (`KIOSK_PORT`), both in `CONFIG/config.env`.
@@ -79,6 +116,14 @@ Ports: controller **8080** (`SOCKET_PORT`), kiosk server **3000**
 | `controller/src/socket_server.cpp` | TCP protocol and STATUS broadcast |
 | `controller/src/hardware_config.cpp` | Pin numbers, calibration, prices |
 | `uploaders/` | The three Python services |
+| `kiosk_server/server.js` | HTTP routes, state stream, cash sale rules |
+| `kiosk_server/lib/controller.js` | TCP client, STATUS parsing, offline rule, `dispensePaid` |
+| `kiosk_server/lib/staff.js` | Staff PIN hashing, checking, lockout |
+| `kiosk_server/public/` | The screens: `index.html`, `css/kiosk.css`, `js/kiosk.js` |
+| `kiosk_server/lib/orders.js` | The one waiting order: number, frozen price, 3-minute life |
+| `kiosk_server/lib/sessions.js`, `lib/access.js` | Staff sign-in; what the shop Wi-Fi may reach |
+| `kiosk_server/public/staff/` | The staff tablet page |
+| `kiosk_server/lib/logs.js` | Reads the controller's and uploader's records for the staff tools, cached |
 | `CONFIG/config.env.sample` | Every setting. `CONFIG/README.md` explains each |
 | `docs/INSTALLATION.md`, `docs/QUICK_INSTALL.md` | Pi setup. Copied from the cashier product, adapted in piece 5 |
 | `kiosk_exit_tool/` | Keyboard shortcut to escape the locked-down browser |
@@ -132,19 +177,54 @@ not a closed or open socket.
     reads them so one firmware serves both products. The pull-up rules in
     `docs/INSTALLATION.md` still apply if buttons are ever wired.
 11. **Do not re-add the cashier.** No staff-driven cart-and-unlock flow, no
-    cashier dashboard. Staff touch this machine only to confirm a cash payment
-    with their PIN and to open the hidden staff menu.
+    cashier dashboard. Staff confirm a cash payment with their PIN on the
+    kiosk only when `STAFF_TABLET` is off, or as a fallback when it is on;
+    everything else — sign-in, mark paid, cancel, today's sales, prices, air
+    clears, waiting credits — is on the staff tablet page (`/staff`).
 
-## Open design questions
+## How the kiosk decides things
 
-Settle these in the piece that meets them, and update the spec:
-
-- **Leftover credit.** The spec's attract screen offers "n presses waiting —
-  tap to continue" to whoever walks up. Credit armed by a late QR payment, or
-  left after a pause timeout, would go to the next stranger.
-- **Staff PINs.** The spec stores `STAFFn_PIN_SHA256`. An unsalted SHA-256 of
-  a short PIN is cracked instantly, so use a salt and a slow hash (Node's
-  `crypto.scrypt`).
+- **Cash is an order.** `/api/order` prices it from the controller and
+  freezes it; `confirmPaid()` in `server.js` is the only way a payment
+  becomes presses, from the staff tablet or the kiosk PIN, and runs the
+  spec's five checks in order. With `STAFF_TABLET = 1` staff confirm from
+  `/staff` on the shop Wi-Fi, which is the only thing the Wi-Fi can reach.
+- **Nothing is queued while offline.** An ARM or DISPENSE held for a reconnect
+  could fire hours later with nobody at the machine, so the server refuses.
+- **No new sale while the machine owes presses.** Any armed, busy or queued
+  slot refuses `/api/order` (`machine_busy`), plus a 3-second guard after each
+  ARM until STATUS shows it.
+- **The dispense screen follows STATUS, not the page.** Paid presses on the
+  machine always show the dispense screen, so a reload never hides them.
+  There is no "tap to continue" on the attract screen; unused presses expire
+  at `ARM_TIMEOUT_SECONDS` into `UNCLAIMED_LOG`.
+- **Unlock opens a payment choice**: Cash, or QR Ph which shows but is
+  disabled as "Coming soon" until piece 4. With `STAFF_TABLET = 1`, Cash
+  shows "Pay at the counter" (the order, a QR and a countdown) and staff
+  mark it paid from `/staff`; otherwise Cash goes straight to the staff PIN
+  pad on the kiosk.
+- **The dispense screen is one card per purchased product**, side by side
+  (up to six in one row), and each tap on
+  a card's Dispense pours **one unit** (one `DISPENSE`, retried through the
+  controller's 200 ms start cooldown). The card counts units off ("1 of 2
+  dispensed") from STATUS against the order the server remembers, so a reload
+  keeps the count. One product pours at a time; the pouring card's button is
+  Pause/Resume. Done appears when every unit is poured, and the screen
+  finishes by itself 20 s later if nobody taps it.
+- **Staff PINs are salted scrypt** (`STAFFn_PIN_HASH`), not the spec's
+  `STAFFn_PIN_SHA256`: an unsalted SHA-256 of a short PIN is cracked
+  instantly.
+- **Staff tools wait for a free machine.** Prices and give back are refused
+  while an order waits, presses are owed, or an ARM is on its way
+  (`toolRefusal()` in `server.js`); write off never is. Air clear is the
+  exception (owner decision 2026-09-29): it only waits for an order and for a
+  nozzle that is actually pouring, not for presses merely owed, so a gallon
+  can be swapped mid-sale (`toolRefusal({ primeOk: true })`). An air clear
+  needs `confirm: true` from the page's "Put a cup under nozzle N" dialog.
+  Every action goes to `logs/staff_events.jsonl` with the staff name.
+- **Waiting credits have no id from the controller.** `lib/logs.js` uses
+  `date_created|slot|qty`; a credit is settled by a `credit_give_back` or
+  `credit_write_off` event naming it, and the list looks back 7 days.
 
 ## Known traps
 

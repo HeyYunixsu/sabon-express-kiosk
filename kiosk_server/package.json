@@ -1,0 +1,12 @@
+{
+  "name": "sabon-express-kiosk",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Self-service kiosk server for the Sabon Express dispenser",
+  "main": "server.js",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test tests/*.test.js"
+  }
+}
