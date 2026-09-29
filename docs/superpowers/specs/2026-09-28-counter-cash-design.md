@@ -104,7 +104,7 @@ The page uses the kiosk's black-and-blue style and works on phones and tablets.
 - One waiting order per kiosk. A new order is refused while one waits, while
   any slot is armed, busy or queued, or within the post-ARM guard.
 - Items and amount are frozen at creation, priced from the controller (never
-  from the page), exactly as `/api/cash` does today.
+  from the page), exactly as `/api/order` does today.
 - Expiry is decided at the moment of the request: at or after 180 s, mark paid
   is refused.
 - Waiting orders live in memory only. After a server restart they are gone;

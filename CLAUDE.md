@@ -185,7 +185,7 @@ not a closed or open socket.
 - **Nothing is queued while offline.** An ARM or DISPENSE held for a reconnect
   could fire hours later with nobody at the machine, so the server refuses.
 - **No new sale while the machine owes presses.** Any armed, busy or queued
-  slot refuses `/api/cash` (`machine_busy`), plus a 3-second guard after each
+  slot refuses `/api/order` (`machine_busy`), plus a 3-second guard after each
   ARM until STATUS shows it.
 - **The dispense screen follows STATUS, not the page.** Paid presses on the
   machine always show the dispense screen, so a reload never hides them.
