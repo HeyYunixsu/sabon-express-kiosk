@@ -94,4 +94,23 @@ test('QR demo: from the shop Wi-Fi /pay answers only in demo mode', async (t) =>
 
   const off = await kiosk(t, { config: ['STAFF_TABLET = 1'], host: '0.0.0.0' });
   assert.strictEqual((await fetch(`http://${ip}:${off.k.port}/pay/A-1`)).status, 403);
+
+  assert.strictEqual((await fetch(lanOn + '/staff')).status, 403);
+});
+
+test('QR demo: a demo payment is not counted as cash in the staff totals', async (t) => {
+  if (!lanAddress()) return t.skip(NO_LAN);
+  const { stub, k } = await kiosk(t);
+  const { body } = await k.post('/api/order', qrSale);
+  const n = body.order.number;
+  const r = await k.post('/pay/api/confirm', { number: n });
+  assert.strictEqual(r.code, 200);
+  await until(() => arms(stub).length === 1);
+
+  const login = await k.post('/staff/api/login', { pin: '4821' });
+  const headers = { cookie: (login.headers.get('set-cookie') || '').split(';')[0] };
+  const state = await k.get('/staff/api/state', headers);
+  assert.deepStrictEqual([state.body.today.paid, state.body.today.total], [0, 0]);
+  const tools = await k.get('/staff/api/tools', headers);
+  assert.deepStrictEqual(tools.body.cashByStaff, {});
 });

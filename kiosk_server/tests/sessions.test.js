@@ -48,10 +48,16 @@ test('isLocal: only the Pi itself', () => {
 
 test('lanAllowed: the staff page and its pictures, nothing else', () => {
   for (const u of ['/staff', '/staff/', '/staff/order/A-3', '/staff/api/state', '/staff/staff.js',
-                   '/img/products/1.webp', '/fonts/inter-v20-latin-700.woff2']) assert.ok(lanAllowed(u), u);
+                   '/img/products/1.webp', '/fonts/inter-v20-latin-700.woff2'])
+    assert.ok(lanAllowed(u, { staff: true }), u);
   for (const u of ['/', '/index.html', '/api/state', '/api/order', '/api/order/pin', '/api/dispense',
                    '/js/kiosk.js', '/staffx', '/staff/../api/order', '/staff/%2e%2e/api/order'])
-    assert.ok(!lanAllowed(u), u);
+    assert.ok(!lanAllowed(u, { staff: true }), u);
+});
+
+test('lanAllowed: without { staff: true }, /staff is refused; pictures still answer', () => {
+  for (const u of ['/staff', '/staff/', '/staff/api/state']) assert.ok(!lanAllowed(u), u);
+  for (const u of ['/img/products/1.webp', '/fonts/inter-v20-latin-700.woff2']) assert.ok(lanAllowed(u), u);
 });
 
 test('lanAddress picks the first non-internal IPv4', () => {

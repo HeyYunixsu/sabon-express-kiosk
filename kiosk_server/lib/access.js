@@ -12,12 +12,13 @@ function isLocal(req) {
 }
 
 // Matched on the raw URL, before any decoding: a dot-dot or an escape is
-// refused outright rather than trusted to normalise somewhere safe. The QR
-// payment demo's phone page (/pay) is added only when the demo is on.
-function lanAllowed(url, { pay = false } = {}) {
+// refused outright rather than trusted to normalise somewhere safe. /staff
+// is added only when the staff tablet is on, /pay only when the QR demo is
+// on; /img and /fonts always, since both pages draw from them.
+function lanAllowed(url, { staff = false, pay = false } = {}) {
   if (url.includes('..') || url.includes('%')) return false;
-  return url === '/staff' || url.startsWith('/staff/')
-      || url.startsWith('/img/') || url.startsWith('/fonts/')
+  return url.startsWith('/img/') || url.startsWith('/fonts/')
+      || (staff && (url === '/staff' || url.startsWith('/staff/')))
       || (pay && url.startsWith('/pay/'));
 }
 

@@ -379,8 +379,9 @@
     $('o-total').textContent = peso(o.amount);
     $('o-number').textContent = o.number;
     $('o-items').innerHTML = cartRows(o.items);
-    if (qrFor !== o.number) {
-      qrFor = o.number;
+    const qrKey = `${o.method}:${o.number}`;
+    if (qrFor !== qrKey) {
+      qrFor = qrKey;
       const canQr = !!staffBase && typeof qrcode === 'function';
       if (canQr) {
         const q = qrcode(0, 'M');
@@ -717,7 +718,7 @@
       cashReady = s.cashReady;
       staffTablet = !!s.staffTablet;
       qrDemo = !!s.qrDemo;
-      if (qrDemo) $('kpi-pay').textContent = 'Cash · QR';
+      if (qrDemo) $('kpi-pay').textContent = 'Cash · QR demo';
       staffBase = s.staffBase || null;
       buildGrid();
       show('attract');

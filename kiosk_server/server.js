@@ -395,9 +395,12 @@ function createKioskServer({
   const today = () => stamp().slice(0, 10);
   const onToday = (field) => (r) => String(r[field] || '').startsWith(today());
 
-  // Today's cash and orders, from the logs so they survive a restart.
+  // Today's cash and orders, from the logs so they survive a restart. A QR
+  // demo payment is pretend money, not cash in the till: rows without a
+  // method are older logs, from before the demo existed, and count as cash.
+  const isCash = (p) => !p.method || p.method === 'cash';
   function todaySummary() {
-    const pays = readJsonl(paymentsLog).filter(onToday('date_created'));
+    const pays = readJsonl(paymentsLog).filter(onToday('date_created')).filter(isCash);
     return {
       paid: pays.length,
       total: pays.reduce((a, p) => a + (Number(p.amount) || 0), 0),
@@ -414,6 +417,7 @@ function createKioskServer({
       machine: !ctrl.online ? 'offline' : machineInUse() ? 'dispensing' : 'ready',
       pending: publicOrder(orders.current()),
       today: todaySummary(),
+      qrDemo,
     };
   }
 
@@ -443,7 +447,7 @@ function createKioskServer({
       primesToday[Number(r.slot)] = (primesToday[Number(r.slot)] || 0) + 1;
     }
     const cashByStaff = {};
-    for (const p of readJsonl(paymentsLog).filter(onToday('date_created'))) {
+    for (const p of readJsonl(paymentsLog).filter(onToday('date_created')).filter(isCash)) {
       const c = cashByStaff[p.staff] || (cashByStaff[p.staff] = { count: 0, amount: 0 });
       c.count++;
       c.amount += Number(p.amount) || 0;
@@ -682,7 +686,7 @@ function createKioskServer({
     const url = req.url.split('?')[0];
     // From the shop Wi-Fi, the staff page and its pictures only. Everything
     // that orders, unlocks or pours answers the Pi itself and nobody else.
-    if (!isLocal(req) && !lanAllowed(url, { pay: qrDemo })) { res.writeHead(403); return res.end('Forbidden'); }
+    if (!isLocal(req) && !lanAllowed(url, { staff: staffTablet, pay: qrDemo })) { res.writeHead(403); return res.end('Forbidden'); }
     if (url === '/pay' || url.startsWith('/pay/')) return payRoutes(req, res, url);
     if (url === '/staff' || url.startsWith('/staff/')) return staffRoutes(req, res, url);
     if (req.method === 'GET' && url === '/api/state') {

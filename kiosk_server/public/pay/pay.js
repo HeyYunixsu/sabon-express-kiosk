@@ -34,6 +34,7 @@
     out_of_stock: 'A product ran out — the order was cancelled. Nothing was charged.',
     price_changed: 'Prices changed — the order was cancelled. Nothing was charged.',
     network: 'Cannot reach the kiosk. Check the Wi-Fi.',
+    not_waiting: 'This order is no longer waiting. Scan the code on the kiosk again.',
   };
 
   // msg undefined: say what the order's own state means.

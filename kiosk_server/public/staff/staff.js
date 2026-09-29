@@ -147,6 +147,7 @@
 
   function render() {
     if (!state) return;
+    $('s-demo').hidden = !state.qrDemo;
     const st = $('s-state');
     st.className = `s-state is-${state.machine}`;
     st.querySelector('b').textContent = { ready: 'Kiosk ready', dispensing: 'Dispensing', offline: 'Kiosk offline' }[state.machine];
