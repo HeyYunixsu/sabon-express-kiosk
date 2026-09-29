@@ -185,7 +185,7 @@
     $('t-sum').textContent = `${today.paid} paid · ${peso(today.total)}`;
     $('t-list').innerHTML = today.orders.map((x) => `<li>
       <span>${esc(x.number)}</span><span>${peso(x.amount)}</span>
-      <span class="st-${x.status}">${x.status === 'paid' ? `Paid · ${esc(x.by)}` : x.status === 'expired' ? 'Expired'
+      <span class="st-${esc(x.status)}">${x.status === 'paid' ? `Paid · ${esc(x.by)}` : x.status === 'expired' ? 'Expired'
         : `Cancelled · ${esc(x.reason)}${x.by ? ` · ${esc(x.by)}` : ''}`} · ${esc((x.closed || '').slice(11, 16))}</span>
     </li>`).join('') || '<li><span></span><span></span><span>No orders yet today.</span></li>';
   }
@@ -252,7 +252,7 @@
 
   const BUSY_MSG = {
     order_waiting: 'An order is waiting for payment. Prices, air clears and give-backs wait until it is paid or cancelled.',
-    machine_busy: 'The machine is dispensing. Prices, air clears and give-backs wait until it is free.',
+    machine_busy: 'The machine has presses to pour. Prices and give-backs wait until it is free.',
     offline: 'The kiosk is offline. Prices, air clears and give-backs wait until it is back.',
   };
   const TOOL_MSG = {
@@ -266,6 +266,8 @@
     not_open: 'That credit was already settled.',
     bad_price: 'Enter a whole number of pesos.',
     network: 'Cannot reach the kiosk. Check the Wi-Fi.',
+    price_changed: 'The price changed since this was paid — write it off and settle it with the customer by hand.',
+    no_prices: 'Prices are still loading — try again in a moment.',
   };
 
   // Set a list's HTML only when it changed: rebuilding buttons every poll
@@ -337,7 +339,7 @@
     </li>`).join(''));
 
     $('x-prime-sec').textContent = `${t.primeSeconds} s each`;
-    put('x-primes', t.products.map((p) => `<button class="s-tile" type="button" data-slot="${p.slot}"${t.busy ? ' disabled' : ''}>
+    put('x-primes', t.products.map((p) => `<button class="s-tile" type="button" data-slot="${p.slot}"${t.primeBusy ? ' disabled' : ''}>
       <b>Nozzle ${p.slot}</b><span>${esc(p.name)}</span><small>${t.primesToday[p.slot] || 0} today</small>
     </button>`).join(''));
 

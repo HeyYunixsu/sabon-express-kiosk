@@ -60,7 +60,7 @@ function stubController() {
       }
     });
   });
-  // Push a line to the kiosk unasked, as the controller does after SETPRICE.
+  // Push a line to the kiosk unasked.
   stub.sendLine = (l) => { for (const s of stub.sockets) s.write(l + '\n'); };
   stub.close = () => {
     for (const s of stub.sockets) s.destroy();

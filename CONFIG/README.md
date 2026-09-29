@@ -40,6 +40,8 @@ cp config.env.sample config.env
 
 Every path key in this file defaults to a location inside the checkout, so a
 fresh kiosk sets none of them. Set one only to move that file elsewhere.
+If you set `TRANSACTION_DIR` or `SALES_ARCHIVE_DIR`, use an absolute path: the
+controller and the uploader read them relative to their own folders.
 
 ### Kiosk server
 

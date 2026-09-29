@@ -149,7 +149,7 @@ The kiosk PIN fallback runs the same five steps.
 | Tool | Behaviour |
 |---|---|
 | **Prices** | Edit six prices, save with `SETPRICE`. Refused while an order waits or presses are owed (the controller already refuses while armed). History from `PRICE_LOG`; the staff name goes to `staff_events.jsonl`. |
-| **Air clears** | Per nozzle: "Put a cup under nozzle 3. Run it for 3 seconds?" → `PRIME,<slot>`; `PRIME_ACK` reported. Refused while an order waits or presses are owed. Today's count per nozzle from `PRIME_LOG`. |
+| **Air clears** | Per nozzle: "Put a cup under nozzle 3. Run it for 3 seconds?" → `PRIME,<slot>`; `PRIME_ACK` reported. Refused while an order waits or a nozzle is pouring. Allowed while presses are owed, so a gallon swapped mid-sale is cleared before the customer pours (the controller holds their Dispense while it runs; owner decision 2026-09-29). Today's count per nozzle from `PRIME_LOG`. |
 | **Today's sales** | Per product and total, from the sales archive plus what is still queued in `transaction/`; cash taken per staff member from `payments.jsonl`; today's orders from `orders.jsonl`. |
 | **Waiting credits** | Entries in `UNCLAIMED_LOG` not yet settled. **Give back** re-arms them (`ARM,<slot>,<qty>`, refused while an order waits or presses are owed), so the kiosk shows the dispense screen for that customer. **Write off** closes the entry. Both logged with the staff name. |
 | **Needs attention** | Today's `INTERRUPTED_LOG` entries (`tank_empty`, `pause_timeout`), for staff to settle with the customer. |

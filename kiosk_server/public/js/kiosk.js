@@ -596,7 +596,9 @@
     }
 
     $('d-sub').textContent = order && order.staff
-      ? `Cash received by ${order.staff}. Place your bottle under the nozzle shown, then tap Dispense.`
+      ? order.reference && order.reference.startsWith('credit ')
+        ? `Given back by ${order.staff}. Place your bottle under the nozzle shown, then tap Dispense.`
+        : `Cash received by ${order.staff}. Place your bottle under the nozzle shown, then tap Dispense.`
       : 'Place your bottle under the nozzle shown, then tap Dispense.';
     $('d-msg').textContent = status.paused ? POUR_MSG.machine_paused : pourMsg;
     const finished = allDone && !anyPouring;

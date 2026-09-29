@@ -49,6 +49,18 @@ test('salesToday adds the archive and the upload queue, today only', () => {
   });
 });
 
+test('salesToday caches parsed transaction files by path and drops deleted ones', () => {
+  const root = tmp();
+  const p = logPaths({}, root);
+  fs.mkdirSync(p.salesArchive, { recursive: true });
+  fs.mkdirSync(p.transactions, { recursive: true });
+  const file = path.join(p.transactions, '1_transaction_9_0.json');
+  fs.writeFileSync(file, JSON.stringify({ machine_id: '1', vendor_id: '', voucher_id: '', amount: 10, slot: '4', date_created: '2026-09-29 12:00:00' }));
+  assert.deepStrictEqual(salesToday(p, '2026-09-29'), { bySlot: { 4: { presses: 1, amount: 10 } }, presses: 1, amount: 10 });
+  fs.unlinkSync(file);
+  assert.deepStrictEqual(salesToday(p, '2026-09-29'), { bySlot: {}, presses: 0, amount: 0 });
+});
+
 test('openCredits: recent, unsettled, newest first', () => {
   const rows = [
     { slot: '2', qty: 1, amount: 5, reason: 'timeout', date_created: '2026-09-20 09:00:00' },

@@ -166,6 +166,27 @@ test('air clear: needs its confirm, runs PRIME, logged with the staff name', asy
   });
 });
 
+test('air clear runs while presses are owed but not while a nozzle is pouring', async (t) => {
+  const { stub, k, headers } = await kiosk(t);
+
+  stub.armed[2] = 1;
+  await until(() => k.ctrl.status.slots[2].armed === 1);
+  const tools1 = (await k.get('/staff/api/tools', headers)).body;
+  assert.strictEqual(tools1.busy, 'machine_busy');
+  assert.strictEqual(tools1.primeBusy, null);
+  const r1 = await k.post('/staff/api/prime', { slot: 4, confirm: true }, headers);
+  assert.deepStrictEqual([r1.code, r1.body.result], [200, 'started']);
+  stub.armed[2] = 0;
+  await until(() => k.ctrl.status.slots[2].armed === 0);
+
+  stub.busy[0] = 1;
+  await until(() => k.ctrl.status.slots[0].busy === true);
+  const r2 = await k.post('/staff/api/prime', { slot: 4, confirm: true }, headers);
+  assert.deepStrictEqual([r2.code, r2.body.error], [409, 'machine_busy']);
+  stub.busy[0] = 0;
+  await until(() => k.ctrl.status.slots[0].busy === false);
+});
+
 test('waiting credits: give back re-arms exactly the unclaimed presses, write off closes', async (t) => {
   const { stub, k, headers } = await kiosk(t);
   const now = stamp();
@@ -215,4 +236,34 @@ test('waiting credits: give back re-arms exactly the unclaimed presses, write of
     const ev = k.rows('staff_events.jsonl').find((e) => e.event === 'credit_write_off');
     assert.deepStrictEqual([ev.staff, ev.slot, ev.qty, ev.amount], ['Ana', 5, 1, 8]);
   });
+});
+
+test('give back refuses when the price changed since the credit was paid; write off still works', async (t) => {
+  const { stub, k, headers } = await kiosk(t);
+  const now = stamp();
+  // Stub prices are 5,5,10,10,8,8: slot 1 x 2 should be 10, not 99.
+  writeRows(k, 'logs/unclaimed_credits.jsonl', [
+    { machine_id: '1', slot: '1', qty: 2, amount: 99, reason: 'timeout', date_created: now },
+  ]);
+  const open = (await k.get('/staff/api/tools', headers)).body.credits;
+  const r = await k.post('/staff/api/credits/give-back', { id: open[0].id }, headers);
+  assert.deepStrictEqual([r.code, r.body.error], [409, 'price_changed']);
+  assert.deepStrictEqual(arms(stub), []);
+  const w = await k.post('/staff/api/credits/write-off', { id: open[0].id }, headers);
+  assert.strictEqual(w.code, 200);
+});
+
+test('give back refuses on an empty tank', async (t) => {
+  const { stub, k, headers } = await kiosk(t);
+  const now = stamp();
+  // Slot 3 price is 10, so qty 2 x 10 = 20 matches -- only the empty tank refuses it.
+  writeRows(k, 'logs/unclaimed_credits.jsonl', [
+    { machine_id: '1', slot: '3', qty: 2, amount: 20, reason: 'timeout', date_created: now },
+  ]);
+  stub.empty[2] = 1;
+  await until(() => k.ctrl.status.slots[2].empty === true);
+  const open = (await k.get('/staff/api/tools', headers)).body.credits;
+  const r = await k.post('/staff/api/credits/give-back', { id: open[0].id }, headers);
+  assert.deepStrictEqual([r.code, r.body.error], [409, 'slot_empty']);
+  assert.deepStrictEqual(arms(stub), []);
 });

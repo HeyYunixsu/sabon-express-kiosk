@@ -214,11 +214,14 @@ not a closed or open socket.
 - **Staff PINs are salted scrypt** (`STAFFn_PIN_HASH`), not the spec's
   `STAFFn_PIN_SHA256`: an unsalted SHA-256 of a short PIN is cracked
   instantly.
-- **Staff tools wait for a free machine.** Prices, air clears and give back
-  are refused while an order waits, presses are owed, or an ARM is on its way
-  (`toolRefusal()` in `server.js`); write off never is. An air clear needs
-  `confirm: true` from the page's "Put a cup under nozzle N" dialog. Every
-  action goes to `logs/staff_events.jsonl` with the staff name.
+- **Staff tools wait for a free machine.** Prices and give back are refused
+  while an order waits, presses are owed, or an ARM is on its way
+  (`toolRefusal()` in `server.js`); write off never is. Air clear is the
+  exception (owner decision 2026-09-29): it only waits for an order and for a
+  nozzle that is actually pouring, not for presses merely owed, so a gallon
+  can be swapped mid-sale (`toolRefusal({ primeOk: true })`). An air clear
+  needs `confirm: true` from the page's "Put a cup under nozzle N" dialog.
+  Every action goes to `logs/staff_events.jsonl` with the staff name.
 - **Waiting credits have no id from the controller.** `lib/logs.js` uses
   `date_created|slot|qty`; a credit is settled by a `credit_give_back` or
   `credit_write_off` event naming it, and the list looks back 7 days.

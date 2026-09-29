@@ -364,10 +364,10 @@ function createKioskServer({
     const pays = readJsonl(paymentsLog).filter(onToday('date_created'));
     return {
       paid: pays.length,
-      total: pays.reduce((a, p) => a + (p.amount || 0), 0),
+      total: pays.reduce((a, p) => a + (Number(p.amount) || 0), 0),
       orders: readJsonl(ordersLog).filter(onToday('closed')).slice(-20).reverse().map((o) => ({
         number: String(o.reference).split('-').slice(1).join('-'),
-        amount: o.amount, status: o.status, reason: o.reason, by: o.by, closed: o.closed,
+        amount: Number(o.amount) || 0, status: o.status, reason: o.reason, by: o.by, closed: o.closed,
       })),
     };
   }
@@ -381,13 +381,21 @@ function createKioskServer({
     };
   }
 
-  // Price changes, air clears and give-backs wait for a free machine: no
-  // order waiting (its prices are frozen and it may be paid any second), no
-  // presses owed, no ARM on its way.
-  function toolRefusal() {
+  // Price changes and give-backs wait for a free machine: no order waiting
+  // (its prices are frozen and it may be paid any second), no presses owed,
+  // no ARM on its way. Air clear is the exception (owner decision
+  // 2026-09-29): a gallon can be swapped mid-sale, so with primeOk it does
+  // not refuse on presses merely armed -- only on a nozzle actually pouring
+  // (the controller itself refuses a press while priming).
+  function toolRefusal({ primeOk = false } = {}) {
     if (!ctrl.online) return [503, { error: 'offline' }];
     if (orders.current()) return [409, { error: 'order_waiting' }];
-    if (Date.now() < armingUntil || machineInUse()) return [409, { error: 'machine_busy' }];
+    if (Date.now() < armingUntil) return [409, { error: 'machine_busy' }];
+    if (primeOk) {
+      if (!ctrl.status || ctrl.status.slots.some((s) => s.busy || s.queued > 0)) return [409, { error: 'machine_busy' }];
+    } else if (machineInUse()) {
+      return [409, { error: 'machine_busy' }];
+    }
     return null;
   }
 
@@ -402,14 +410,15 @@ function createKioskServer({
     for (const p of readJsonl(paymentsLog).filter(onToday('date_created'))) {
       const c = cashByStaff[p.staff] || (cashByStaff[p.staff] = { count: 0, amount: 0 });
       c.count++;
-      c.amount += p.amount || 0;
+      c.amount += Number(p.amount) || 0;
     }
     const refused = toolRefusal();
+    const primeRefused = toolRefusal({ primeOk: true });
     return {
       products: products.map(({ slot, name, img }) => ({ slot, name, img })),
       prices: ctrl.prices,
       priceHistory: readJsonl(logs.prices).slice(-10).reverse().map((r) => ({
-        slot: Number(r.slot), from: r.from, to: r.to, date_created: r.date_created,
+        slot: Number(r.slot), from: Number(r.from), to: Number(r.to), date_created: r.date_created,
       })),
       primeSeconds,
       primesToday,
@@ -417,7 +426,7 @@ function createKioskServer({
       cashByStaff,
       credits: openCredits(readJsonl(logs.unclaimed), readJsonl(staffLog), creditSince()),
       attention: readJsonl(logs.interrupted).filter(onToday('date_created')).reverse().map((r) => ({
-        slot: Number(r.slot), amount: r.amount, reason: r.reason, date_created: r.date_created,
+        slot: Number(r.slot), amount: Number(r.amount) || 0, reason: r.reason, date_created: r.date_created,
       })),
       machine: {
         machineId: config.machineId || '',
@@ -426,6 +435,7 @@ function createKioskServer({
         stock: ctrl.status ? ctrl.status.slots.map((s) => ({ slot: s.slot, empty: s.empty })) : [],
       },
       busy: refused ? refused[1].error : null,
+      primeBusy: primeRefused ? primeRefused[1].error : null,
     };
   }
 
@@ -443,6 +453,7 @@ function createKioskServer({
     }
     const refused = toolRefusal();
     if (refused) return json(res, ...refused);
+    if (!Number.isInteger(ctrl.prices[slot])) return json(res, 503, { error: 'no_prices' });
     const from = ctrl.prices[slot];
     const result = await ctrl.request(`SETPRICE,${slot},${price}`);
     if (result === 'ok' || result === 'not_saved') {
@@ -463,7 +474,7 @@ function createKioskServer({
     // The page first asks "Put a cup under nozzle N"; a POST without that
     // answer does not run a pump.
     if (body.confirm !== true) return json(res, 400, { error: 'not_confirmed' });
-    const refused = toolRefusal();
+    const refused = toolRefusal({ primeOk: true });
     if (refused) return json(res, ...refused);
     const result = await ctrl.request(`PRIME,${slot}`);
     staffEvent('prime', { staff: name, slot, result });
@@ -488,6 +499,12 @@ function createKioskServer({
     }
     const refused = toolRefusal();
     if (refused) return json(res, ...refused);
+    if (ctrl.status.slots[c.slot - 1].empty) return json(res, 409, { error: 'slot_empty' });
+    if (!Number.isInteger(ctrl.prices[c.slot])) return json(res, 503, { error: 'no_prices' });
+    // The controller books a press at the price when it pours, not the price
+    // at credit time: re-arming after a price change would book the cloud a
+    // different amount than the cash that was actually taken.
+    if (c.amount !== c.qty * ctrl.prices[c.slot]) return json(res, 409, { error: 'price_changed' });
     if (!ctrl.send(`ARM,${c.slot},${c.qty}`)) return json(res, 503, { error: 'offline' });
     armingUntil = Date.now() + 3000;
     dispenseOrder = { reference: `credit ${c.id}`, staff: name, items: [{ slot: c.slot, qty: c.qty }] };

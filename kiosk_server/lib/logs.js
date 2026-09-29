@@ -48,6 +48,13 @@ function logPaths(config, root) {
   };
 }
 
+// Sale files are pretty-printed multi-line JSON (controller/src/transaction.cpp),
+// so they cannot go through readJsonl's line-based cache -- but a sale file
+// never changes once written, so once parsed it is kept here for good, keyed
+// by its full path. Only new paths get read; a path no longer in the
+// directory is dropped (uploaded and archived, or removed).
+const txnCache = new Map();   // full path -> parsed record
+
 // Today's sales per slot: what the cloud has confirmed (the uploader's monthly
 // archive) plus what is still waiting to upload (the transaction directory).
 // A sale is in one or the other: the uploader archives it, then deletes it.
@@ -56,11 +63,20 @@ function salesToday(p, day) {
   const rows = readJsonl(path.join(p.salesArchive, `sales-${day.slice(0, 7)}.jsonl`)).filter(onDay(day));
   let names = [];
   try { names = fs.readdirSync(p.transactions).filter((n) => n.endsWith('.json')); } catch (_) { /* none yet */ }
+  const present = new Set();
   for (const n of names) {
+    const full = path.join(p.transactions, n);
+    present.add(full);
+    if (txnCache.has(full)) continue;
     try {
-      const r = JSON.parse(fs.readFileSync(path.join(p.transactions, n), 'utf-8'));
-      if (onDay(day)(r)) rows.push(r);
-    } catch (_) { /* being written or uploaded right now */ }
+      txnCache.set(full, JSON.parse(fs.readFileSync(full, 'utf-8')));
+    } catch (_) { /* being written or uploaded right now; retry next call */ }
+  }
+  for (const full of txnCache.keys()) {
+    if (path.dirname(full) === p.transactions && !present.has(full)) txnCache.delete(full);
+  }
+  for (const [full, r] of txnCache) {
+    if (path.dirname(full) === p.transactions && onDay(day)(r)) rows.push(r);
   }
   const bySlot = {};
   let presses = 0;
