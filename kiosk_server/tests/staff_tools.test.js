@@ -181,6 +181,37 @@ test('air clear is reported as priming, not as a customer pour, until STATUS sho
   assert.deepStrictEqual((await k.get('/api/state')).body.priming, []);
 });
 
+test('the kiosk never sees an air clear as a pour, even when the busy STATUS rides with the ACK', async (t) => {
+  const { stub, k, headers } = await kiosk(t);
+  stub.primeBusy = true;
+  const seen = [];
+  const ctl = new AbortController();
+  const res = await fetch(k.url + '/api/stream', { signal: ctl.signal });
+  const reading = (async () => {
+    const dec = new TextDecoder();
+    let buf = '';
+    try {
+      for await (const chunk of res.body) {
+        buf += dec.decode(chunk);
+        let i;
+        while ((i = buf.indexOf('\n\n')) >= 0) {
+          const ev = buf.slice(0, i);
+          buf = buf.slice(i + 2);
+          if (ev.startsWith('data: ')) seen.push(JSON.parse(ev.slice(6)));
+        }
+      }
+    } catch (_) { /* aborted */ }
+  })();
+
+  const r = await k.post('/staff/api/prime', { slot: 3, confirm: true }, headers);
+  assert.strictEqual(r.code, 200);
+  await until(() => seen.some((s) => s.status && s.status.slots[2].busy));
+  ctl.abort();
+  await reading;
+  const asPour = seen.filter((s) => s.status && s.status.slots[2].busy && !(s.priming || []).includes(3));
+  assert.deepStrictEqual(asPour, []);
+});
+
 test('air clear runs while presses are owed but not while a nozzle is pouring', async (t) => {
   const { stub, k, headers } = await kiosk(t);
 

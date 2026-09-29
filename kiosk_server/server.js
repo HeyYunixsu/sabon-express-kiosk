@@ -496,11 +496,13 @@ function createKioskServer({
     if (body.confirm !== true) return json(res, 400, { error: 'not_confirmed' });
     const refused = toolRefusal({ primeOk: true });
     if (refused) return json(res, ...refused);
+    // Marked before sending: the controller broadcasts the busy STATUS right
+    // after PRIME_ACK, often in the same TCP read, so a mark set after the
+    // await would let one update show the kiosk a "pour".
+    priming.set(slot, { until: Date.now() + primeSeconds * 1000 + 3000, notBusySince: null });
     const result = await ctrl.request(`PRIME,${slot}`);
-    if (result === 'started') {
-      priming.set(slot, { until: Date.now() + primeSeconds * 1000 + 3000, notBusySince: null });
-      push();
-    }
+    if (result !== 'started') priming.delete(slot);
+    push();
     staffEvent('prime', { staff: name, slot, result });
     log(`[kiosk] prime slot ${slot} by ${name}: ${result}`);
     json(res, ackCode(result, ['started']), { result });

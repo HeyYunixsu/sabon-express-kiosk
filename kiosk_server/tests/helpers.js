@@ -56,7 +56,15 @@ function stubController() {
           }
           s.write(`PRICE_ACK,${slot},${r}\n`);
         }
-        if (verb === 'PRIME') s.write(`PRIME_ACK,${slot},${stub.primeReply || 'started'}\n`);
+        if (verb === 'PRIME') {
+          const r = stub.primeReply || 'started';
+          // primeBusy: like the controller, broadcast the slot busy right
+          // behind the ACK, in the same write.
+          if (stub.primeBusy && r === 'started') {
+            stub.busy[Number(slot) - 1] = 1;
+            s.write(`PRIME_ACK,${slot},${r}\n${line()}`);
+          } else s.write(`PRIME_ACK,${slot},${r}\n`);
+        }
       }
     });
   });
