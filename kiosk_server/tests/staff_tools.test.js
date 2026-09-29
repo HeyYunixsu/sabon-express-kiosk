@@ -166,6 +166,21 @@ test('air clear: needs its confirm, runs PRIME, logged with the staff name', asy
   });
 });
 
+test('air clear is reported as priming, not as a customer pour, until STATUS shows the nozzle free', async (t) => {
+  const { stub, k, headers } = await kiosk(t);
+
+  const r = await k.post('/staff/api/prime', { slot: 3, confirm: true }, headers);
+  assert.deepStrictEqual([r.code, r.body.result], [200, 'started']);
+  assert.deepStrictEqual((await k.get('/api/state')).body.priming, [3]);
+
+  stub.busy[2] = 0; // the stub never actually reports the prime busy; STATUS just says "not busy"
+  await until(async () => {
+    const { priming } = (await k.get('/api/state')).body;
+    return Array.isArray(priming) && priming.length === 0;
+  });
+  assert.deepStrictEqual((await k.get('/api/state')).body.priming, []);
+});
+
 test('air clear runs while presses are owed but not while a nozzle is pouring', async (t) => {
   const { stub, k, headers } = await kiosk(t);
 

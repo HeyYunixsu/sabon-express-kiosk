@@ -587,6 +587,7 @@
       else if (u.pouring && paused) { act = 'resume'; html = 'PAUSED<small>Tap to resume</small>'; cls += ' is-paused'; }
       else if (u.pouring) { act = 'pause'; html = 'DISPENSING…<small>Tap to pause</small>'; cls += ' is-pouring'; }
       else if (complete) { html = 'DISPENSED ✓'; cls += ' is-done'; }
+      else if (u.s.priming) html = 'CLEARING AIR…';
       else if (u.s.empty) html = 'CALL STAFF';
       else if (!anyPouring && !sending) { act = 'dispense'; html = u.done ? 'DISPENSE NEXT' : 'DISPENSE'; }
       btn.dataset.act = act;
@@ -642,6 +643,17 @@
     lastMsgAt = Date.now();
     online = data.online;
     status = data.status;
+    // STATUS cannot tell an air clear from a customer's pour -- both show the
+    // slot busy. The server tracks which slots are priming; treat those as
+    // not busy everywhere else reads s.busy, on a copy so nothing shared with
+    // the server's own object gets mutated.
+    if (status && data.priming && data.priming.length) {
+      status = {
+        ...status,
+        slots: status.slots.map((s) =>
+          data.priming.includes(s.slot) ? { ...s, busy: false, priming: true } : s),
+      };
+    }
     if (data.order) order = data.order;
     pending = data.pending || null;
     if (pending) pendingSeenAt = Date.now();

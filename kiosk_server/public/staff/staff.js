@@ -407,7 +407,8 @@
     const slot = Number(b.dataset.slot);
     ask(`Put a cup under nozzle ${slot}`, `${nameOf(slot)}. Run it for ${tools.primeSeconds} seconds?`, 'Yes, run it', async () => {
       const r = await api('/staff/api/prime', { slot, confirm: true });
-      toast(r.code === 200, r.code === 200 ? `Nozzle ${slot} is clearing air for ${tools.primeSeconds} seconds.` : failed(r));
+      toast(r.code === 200, r.code === 200 ? `Nozzle ${slot} is clearing air for ${tools.primeSeconds} seconds.`
+        : r.body.error === 'machine_busy' ? 'A nozzle is pouring — wait for it to stop.' : failed(r));
       loadTools();
     });
   });

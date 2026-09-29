@@ -186,6 +186,25 @@ function createKioskServer({
   // 2 dispensed". STATUS only knows what is still owed. Held in memory; after
   // a restart the page rebuilds it from what STATUS still owes.
   let dispenseOrder = null;
+  // A prime (air clear) makes the controller report that slot busy in STATUS,
+  // the same as a paid pour -- there is no field that says "priming". Tracked
+  // here so the kiosk page can hide it: slot -> { until, notBusySince }.
+  // Cleared once STATUS has shown the slot free for 500ms (debounced so a
+  // one-tick blip mid-prime does not end it early), and always by its
+  // deadline in case STATUS never shows it free (a wedged nozzle, a missed
+  // line).
+  const priming = new Map();
+  function updatePriming(s) {
+    const now = Date.now();
+    for (const [slot, p] of priming) {
+      const busy = s.slots[slot - 1] && s.slots[slot - 1].busy;
+      if (busy) p.notBusySince = null;
+      else if (p.notBusySince === null) p.notBusySince = now;
+      if (now >= p.until || (p.notBusySince !== null && now - p.notBusySince >= 500)) {
+        priming.delete(slot);
+      }
+    }
+  }
   function snapshot() {
     const closed = orders.closed();
     return {
@@ -194,13 +213,14 @@ function createKioskServer({
       pending: publicOrder(orders.current()),
       lastClosed: publicOrder(closed[0] || null),
       staffBase: staffBase(),
+      priming: [...priming.keys()].sort((a, b) => a - b),
     };
   }
   function push() {
     const data = `data: ${JSON.stringify(snapshot())}\n\n`;
     for (const res of streams) res.write(data);
   }
-  ctrl.on('status', push);
+  ctrl.on('status', (s) => { updatePriming(s); push(); });
   ctrl.on('online', push);
   ctrl.on('prices', push);
 
@@ -477,6 +497,10 @@ function createKioskServer({
     const refused = toolRefusal({ primeOk: true });
     if (refused) return json(res, ...refused);
     const result = await ctrl.request(`PRIME,${slot}`);
+    if (result === 'started') {
+      priming.set(slot, { until: Date.now() + primeSeconds * 1000 + 3000, notBusySince: null });
+      push();
+    }
     staffEvent('prime', { staff: name, slot, result });
     log(`[kiosk] prime slot ${slot} by ${name}: ${result}`);
     json(res, ackCode(result, ['started']), { result });
