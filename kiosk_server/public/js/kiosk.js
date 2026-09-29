@@ -1,6 +1,11 @@
 'use strict';
-// Sabon Express kiosk: attract -> shop -> pay -> pin -> dispense -> thanks.
+// Sabon Express kiosk: attract -> shop -> pay -> order/pin -> dispense -> thanks.
 // Landscape 1920x1080, in the cashier V2 dashboard's visual language.
+//
+// Cash is an order. With the staff tablet on, the customer sees "Pay at the
+// counter" with a QR, pays at the counter, and staff mark it paid from their
+// tablet; with it off, the kiosk goes straight to the staff PIN pad. Either
+// way the server decides, and the kiosk follows its stream.
 //
 // The dispense screen is driven by the controller, not by this page. Whenever
 // STATUS shows paid presses on the machine, this page shows them -- so a
@@ -12,6 +17,7 @@
   const H = 1080;
   const OFFLINE_MS = 6000;        // silence that means the machine is gone
   const THANKS_MS = 10000;
+  const ENDED_MS = 5000;          // "Order expired" / "cancelled" stays this long
   const PAUSED_AFTER_MS = 900;    // remaining time frozen this long = paused
   const DONE_AUTO_MS = 20000;     // all dispensed, Done not tapped: finish anyway
   const MAX_QTY = 20;
@@ -26,6 +32,8 @@
   let status = null;
   let online = false;
   let cashReady = false;
+  let staffTablet = false;
+  let staffBase = null;
   let idleSeconds = 60;
   let lastMsgAt = 0;
   let streamOpenedAt = 0;
@@ -37,7 +45,15 @@
   let pin = '';
   let lastTouch = Date.now();
   let thanksAt = 0;
-  let order = null;               // { reference, staff, items } from the server
+  let order = null;               // the paid order being dispensed, from the server
+
+  let pending = null;             // the order waiting for payment, from the server
+  let pendingSeenAt = 0;
+  let lastClosed = null;
+  let myOrder = null;             // number of the order this screen is showing
+  let endedAt = 0;                // when "expired"/"cancelled" went up
+  let qrFor = '';
+  let cancelArmedUntil = 0;
 
   let sending = false;            // one request at a time from this page
   let sendingSlot = 0;
@@ -80,30 +96,36 @@
   const cartTotal = () => cartItems().reduce((a, it) => a + (prices[it.slot] || 0) * it.qty, 0);
   const pricesKnown = () => cartItems().every((it) => Number.isInteger(prices[it.slot]));
   const machineReady = () => online && Date.now() - lastMsgAt < OFFLINE_MS;
+  const myPending = () => (pending && pending.number === myOrder ? pending : null);
 
+  // Items from the cart carry no price (the page's prices are used); items
+  // from an order carry the price frozen when it was made.
   function cartRows(items) {
     return items.map((it) => {
       const p = products[it.slot - 1];
+      const price = it.price !== undefined ? it.price : (prices[it.slot] || 0);
       return `<li class="v2-cart-row">
         <img src="${p.img}" alt="">
-        <span class="v2-cart-name"><b>${p.name}</b><span>${p.ml ? `${p.ml} ml per press · ` : ''}${peso(prices[it.slot] || 0)} each</span></span>
+        <span class="v2-cart-name"><b>${p.name}</b><span>${p.ml ? `${p.ml} ml per press · ` : ''}${peso(price)} each</span></span>
         <span class="v2-cart-qty">× ${it.qty}</span>
-        <span class="v2-cart-price">${peso((prices[it.slot] || 0) * it.qty)}</span>
+        <span class="v2-cart-price">${peso(price * it.qty)}</span>
       </li>`;
     }).join('');
   }
 
   // ---- screens -----------------------------------------------------------------
-  const VIEWS = ['shop', 'pay', 'pin', 'dispense', 'thanks'];
+  const VIEWS = ['shop', 'pay', 'order', 'pin', 'dispense', 'thanks'];
   function show(name) {
     if (name === screen) return;
     screen = name;
     $('attract').hidden = name !== 'attract';
     for (const v of VIEWS) $(`v-${v}`).hidden = v !== name;
-    if (name === 'attract') { cart = {}; pin = ''; }
+    if (name === 'attract') { cart = {}; pin = ''; myOrder = null; endedAt = 0; }
+    if (name === 'pay') $('pay-msg').textContent = '';
     if (name === 'pin') { pin = ''; setPinMsg(''); }
     if (name === 'dispense') {
       dispenseEnteredAt = Date.now(); sawCredit = false; doneSince = 0; pourMsg = ''; cardsKey = '';
+      myOrder = null;
     }
     if (name === 'thanks') thanksAt = Date.now();
     lastTouch = Date.now();
@@ -118,6 +140,20 @@
       doneSince = 0;
       return;
     }
+    // A waiting order the page does not know about (a reload, a crash):
+    // put it back on screen rather than strand it.
+    if (pending && !myOrder && ['attract', 'shop', 'pay'].includes(screen)) {
+      myOrder = pending.number;
+      show(staffTablet ? 'order' : 'pin');
+      return;
+    }
+    // Our order stopped waiting. Paid shows up as credit (above); anything
+    // else gets a short explanation, then the start screen.
+    if (myOrder && !endedAt && !myPending() && (screen === 'order' || screen === 'pin')) {
+      const closed = lastClosed && lastClosed.number === myOrder ? lastClosed : null;
+      if (!closed || closed.status !== 'paid') { endedAt = now; show('order'); render(); }
+    }
+    if (endedAt && now - endedAt > ENDED_MS) { endedAt = 0; show('attract'); return; }
     if (screen !== 'dispense') return;
     if (sawCredit) {
       // Everything poured: Done / Finish is live. If nobody taps it, finish
@@ -138,6 +174,7 @@
     if (screen === 'attract') renderShelf();
     if (screen === 'shop') renderShop();
     if (screen === 'pay') renderPay();
+    if (screen === 'order') renderOrder();
     if (screen === 'pin') renderPin();
     if (screen === 'dispense') renderDispense();
   }
@@ -243,12 +280,123 @@
   // ---- pay: choose cash or QR ------------------------------------------------------
   function renderPay() {
     $('pay-amount').textContent = peso(cartTotal());
-    $('pay-cash').disabled = !cashReady || !machineReady();
-    $('pay-cash-desc').textContent = cashReady
-      ? 'Hand the exact amount to a staff member'
-      : 'Not set up on this kiosk — please call staff';
+    $('pay-cash').disabled = !cashReady || !machineReady() || sending;
+    $('pay-cash-desc').textContent = !cashReady
+      ? 'Not set up on this kiosk — please call staff'
+      : staffTablet ? 'Pay at the counter' : 'Hand the exact amount to a staff member';
   }
-  $('pay-cash').addEventListener('click', () => show('pin'));
+
+  const PAY_MSG = {
+    price_changed: 'Prices were just updated. Please check the new total.',
+    machine_busy: 'The machine is still finishing an order. Please wait.',
+    order_waiting: 'Another order is waiting for payment. Please wait a moment.',
+    offline: 'The machine is not ready. Please try again in a moment.',
+    no_prices: 'Prices are still loading. Please wait a moment.',
+  };
+
+  $('pay-cash').addEventListener('click', async () => {
+    if (sending) return;
+    sending = true;
+    renderPay();
+    const r = await post('/api/order', { items: cartItems(), amount: cartTotal() });
+    sending = false;
+    if (r.code === 200) {
+      pending = r.body.order;
+      pendingSeenAt = Date.now();
+      myOrder = pending.number;
+      endedAt = 0;
+      show(staffTablet ? 'order' : 'pin');
+      return;
+    }
+    const e = r.body.error;
+    if (e === 'empty') {
+      const p = products[(r.body.slot || 1) - 1];
+      $('pay-msg').textContent = `Sorry, ${p.name} just ran out. Please change the order.`;
+      setTimeout(() => { if (screen === 'pay') show('shop'); }, 2500);
+    } else {
+      $('pay-msg').textContent = PAY_MSG[e] || PAY_MSG.offline;
+    }
+    renderPay();
+  });
+
+  // ---- order: pay at the counter ------------------------------------------------
+  const ENDED = {
+    expired: ['Order expired', 'Nothing was charged. You can order again.'],
+    customer: ['Order cancelled', 'Nothing was charged.'],
+    staff: ['Order cancelled by staff', 'Nothing was charged. Please ask at the counter.'],
+    out_of_stock: ['A product ran out', 'Nothing was charged. Please order again.'],
+    price_changed: ['Prices changed', 'Nothing was charged. Please order again at the new price.'],
+    gone: ['Order no longer available', 'Nothing was charged. Please order again.'],
+  };
+
+  function renderOrder() {
+    const ended = !!endedAt;
+    $('o-live').hidden = ended;
+    $('o-wait').hidden = ended;
+    $('o-foot').hidden = ended;
+    $('o-lead').hidden = ended;
+    $('o-ended').hidden = !ended;
+    $('o-title').textContent = ended ? `Order ${myOrder || ''}` : 'Pay at the counter';
+    if (ended) {
+      const c = lastClosed && lastClosed.number === myOrder ? lastClosed : null;
+      const key = !c ? 'gone' : c.status === 'expired' ? 'expired' : (c.reason || 'gone');
+      const [title, text] = ENDED[key] || ENDED.gone;
+      $('o-ended-title').textContent = title;
+      $('o-ended-text').textContent = text;
+      return;
+    }
+    const o = myPending();
+    if (!o) return;
+    $('o-amount').textContent = peso(o.amount);
+    $('o-total').textContent = peso(o.amount);
+    $('o-number').textContent = o.number;
+    $('o-items').innerHTML = cartRows(o.items);
+    if (qrFor !== o.number) {
+      qrFor = o.number;
+      const canQr = !!staffBase && typeof qrcode === 'function';
+      if (canQr) {
+        const q = qrcode(0, 'M');
+        q.addData(`${staffBase}/staff/order/${o.number}`);
+        q.make();
+        $('o-qr').innerHTML = q.createSvgTag({ cellSize: 4, margin: 0, scalable: true });
+      }
+      $('o-qr').hidden = !canQr;
+      $('o-hint').hidden = !canQr;
+    }
+    const left = Math.max(0, o.remainingMs - (Date.now() - pendingSeenAt));
+    const s = Math.ceil(left / 1000);
+    $('o-wait-text').textContent = `Waiting for payment · ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')} left`;
+    const bar = $('o-bar');
+    bar.style.width = `${Math.min(100, (left / o.totalMs) * 100)}%`;
+    bar.parentElement.classList.toggle('is-low', left < 30000);
+    const c = $('o-cancel');
+    const confirming = Date.now() < cancelArmedUntil;
+    c.classList.toggle('is-confirm', confirming);
+    c.textContent = confirming ? 'Tap again to cancel' : 'Cancel order';
+  }
+
+  async function cancelOrder() {
+    if (!myOrder) return;
+    await post('/api/order/cancel', { number: myOrder });
+  }
+
+  // Two taps: a customer brushing the button should not lose their order.
+  $('o-cancel').addEventListener('click', async () => {
+    if (Date.now() < cancelArmedUntil) {
+      cancelArmedUntil = 0;
+      await cancelOrder();
+      return;
+    }
+    cancelArmedUntil = Date.now() + 3000;
+    renderOrder();
+  });
+  $('o-staff').addEventListener('click', () => show('pin'));
+  $('pin-back').addEventListener('click', async () => {
+    if (staffTablet) { show('order'); return; }
+    await cancelOrder();
+    myOrder = null;
+    show('pay');
+  });
 
   // ---- pin: staff confirm the cash ---------------------------------------------------
   function setPinMsg(text, shake) {
@@ -260,14 +408,16 @@
   }
 
   function renderPin() {
-    const items = cartItems();
+    const o = myPending();
+    const items = o ? o.items : cartItems();
+    const amount = o ? o.amount : cartTotal();
     $('pin-summary').innerHTML = cartRows(items);
-    $('pin-amount').textContent = $('pin-total').textContent = peso(cartTotal());
-    $('pin-items').textContent = cartCount();
+    $('pin-amount').textContent = $('pin-total').textContent = peso(amount);
+    $('pin-items').textContent = items.reduce((a, it) => a + it.qty, 0);
     const slots = Math.max(4, pin.length);
     $('pin-dots').innerHTML = Array.from({ length: slots }, (_, i) =>
       `<i class="${i < pin.length ? 'on' : ''}"></i>`).join('');
-    $('confirm-cash').disabled = pin.length < 4 || sending || !machineReady();
+    $('confirm-cash').disabled = pin.length < 4 || sending || !machineReady() || !o;
     $('confirm-label').textContent = sending ? 'Checking…' : 'Confirm & Unlock';
   }
 
@@ -283,30 +433,24 @@
   });
 
   $('confirm-cash').addEventListener('click', async () => {
-    if (sending || pin.length < 4) return;
+    if (sending || pin.length < 4 || !myOrder) return;
     sending = true;
     renderPin();
-    const r = await post('/api/cash', { items: cartItems(), amount: cartTotal(), pin });
+    const r = await post('/api/order/pin', { number: myOrder, pin });
     sending = false;
     pin = '';
     if (r.code === 200) {
-      order = r.body.order;
-      show('dispense');
-      return;
+      order = { reference: r.body.order.reference, staff: r.body.order.by, items: r.body.order.items };
+      renderPin();
+      return;       // the credit arrives over the stream and route() goes to dispense
     }
     const e = r.body.error;
     if (e === 'wrong') setPinMsg('Wrong PIN. Please try again.', true);
     else if (e === 'locked') setPinMsg(`Too many wrong PINs. Try again in ${Math.ceil((r.body.retryInMs || 60000) / 1000)} s.`, true);
-    else if (e === 'price_changed') setPinMsg('Prices were just updated. Please check the new total.');
-    else if (e === 'empty') {
-      const p = products[(r.body.slot || 1) - 1];
-      setPinMsg(`Sorry, ${p.name} just ran out. Please change the order.`);
-      setTimeout(() => { if (screen === 'pin') show('shop'); }, 2500);
-    }
+    else if (e === 'no_staff') setPinMsg('No staff PINs are set up on this kiosk. Please call staff.');
     else if (e === 'machine_busy') setPinMsg('The machine is still finishing an order. Please wait.');
-    else if (e === 'no_staff') { cashReady = false; show('pay'); return; }
-    else if (e === 'no_prices') setPinMsg('Prices are still loading. Please wait a moment.');
-    else setPinMsg('The machine is not ready. Nothing was charged — please try again.');
+    else if (['not_waiting', 'out_of_stock', 'price_changed'].includes(e)) { /* the stream shows why */ }
+    else setPinMsg('The machine is not ready. Don\'t take the cash yet — please try again.');
     renderPin();
   });
 
@@ -486,6 +630,9 @@
     online = data.online;
     status = data.status;
     if (data.order) order = data.order;
+    pending = data.pending || null;
+    if (pending) pendingSeenAt = Date.now();
+    lastClosed = data.lastClosed || null;
     if (data.prices && Object.keys(data.prices).length) prices = data.prices;
     if (status) trackPours();
     route();
@@ -503,7 +650,9 @@
     const now = Date.now();
     // An open stream that has gone quiet never fires onerror, so rebuild it.
     if (now - lastMsgAt > OFFLINE_MS && now - streamOpenedAt > OFFLINE_MS) openStream();
-    if (['shop', 'pay', 'pin'].includes(screen) && now - lastTouch > idleSeconds * 1000) show('attract');
+    // An order keeps the screen: only the order's own timeout ends it.
+    if (['shop', 'pay'].includes(screen) && now - lastTouch > idleSeconds * 1000) show('attract');
+    if (screen === 'pin' && !myOrder && now - lastTouch > idleSeconds * 1000) show('attract');
     if (screen === 'thanks' && now - thanksAt > THANKS_MS) show('attract');
     route();
     render();
@@ -515,6 +664,8 @@
       products = s.products;
       idleSeconds = s.idleSeconds;
       cashReady = s.cashReady;
+      staffTablet = !!s.staffTablet;
+      staffBase = s.staffBase || null;
       buildGrid();
       show('attract');
       onState(s);

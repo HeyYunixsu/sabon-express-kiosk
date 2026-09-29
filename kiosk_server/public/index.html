@@ -96,7 +96,7 @@
         <button class="pay-tile" id="pay-cash" type="button">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.6"/><path d="M6 9.5v5M18 9.5v5"/></svg>
           <span class="pay-name">Cash</span>
-          <span class="pay-desc" id="pay-cash-desc">Hand the exact amount to a staff member</span>
+          <span class="pay-desc" id="pay-cash-desc">Pay at the counter</span>
         </button>
         <button class="pay-tile" id="pay-qr" type="button" disabled>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3h-3zM20 14v.01M14 20h.01M17 20h4v-3"/></svg>
@@ -105,12 +105,48 @@
           <span class="pay-soon">Coming soon</span>
         </button>
       </div>
+      <p class="pay-msg" id="pay-msg" role="alert"></p>
+    </section>
+
+    <!-- ================== ORDER: pay at the counter ================== -->
+    <section class="view v2-card kiosk-panel" id="v-order" hidden>
+      <div class="k-head">
+        <div class="k-title">
+          <h1 id="o-title">Pay at the counter</h1>
+          <p id="o-lead">Go to the counter and pay exactly <b class="k-amount" id="o-amount">₱0</b>. Staff will unlock the machine for you.</p>
+        </div>
+      </div>
+      <div class="o-layout" id="o-live">
+        <div class="o-order">
+          <ul class="v2-cart-list o-items" id="o-items"></ul>
+          <div class="v2-totals">
+            <div class="v2-total-row"><span>Total to pay</span><span class="v2-total-v v2-total-money" id="o-total">₱0</span></div>
+          </div>
+        </div>
+        <div class="o-side">
+          <div class="o-qr" id="o-qr"></div>
+          <p class="o-hint" id="o-hint">Or show staff a photo of this code.</p>
+          <div class="o-number">Order <b id="o-number">—</b></div>
+        </div>
+      </div>
+      <div class="o-wait" id="o-wait">
+        <div class="o-wait-text" id="o-wait-text">Waiting for payment</div>
+        <div class="o-bar"><i id="o-bar"></i></div>
+      </div>
+      <div class="o-ended" id="o-ended" hidden>
+        <h2 id="o-ended-title"></h2>
+        <p id="o-ended-text"></p>
+      </div>
+      <div class="o-foot" id="o-foot">
+        <button class="v2-btn v2-btn-ghost o-cancel" id="o-cancel" type="button">Cancel order</button>
+        <button class="o-staff" id="o-staff" type="button">Staff at the machine? Enter PIN ›</button>
+      </div>
     </section>
 
     <!-- ================== PIN: staff confirms the cash ================== -->
     <section class="view v2-card kiosk-panel" id="v-pin" hidden>
       <div class="k-head">
-        <button class="v2-btn v2-btn-ghost k-back" data-go="pay" type="button">‹ Back</button>
+        <button class="v2-btn v2-btn-ghost k-back" id="pin-back" type="button">‹ Back</button>
         <div class="k-title">
           <h1>Pay with cash</h1>
           <p>Hand exactly <b class="k-amount" id="pin-amount">₱0</b> to a staff member · no change is given</p>
@@ -191,6 +227,7 @@
   </div>
 
 </div>
+<script src="js/qrcode.js"></script>
 <script src="js/kiosk.js"></script>
 </body>
 </html>
