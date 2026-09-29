@@ -385,6 +385,10 @@
     if (Date.now() < cancelArmedUntil) {
       cancelArmedUntil = 0;
       await cancelOrder();
+      // The customer chose this: straight back to the start, no explanation
+      // screen. (show('attract') also clears myOrder, so route() will not
+      // treat the closed order as one that ended on its own.)
+      show('attract');
       return;
     }
     cancelArmedUntil = Date.now() + 3000;
