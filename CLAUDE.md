@@ -24,7 +24,7 @@ layout for a customer's finger (nothing under 72px, main actions 96px+).
 |---|---|---|
 | 1 | Controller `DISPENSE`, `PAUSE`, `RESUME` | **Done**, tested |
 | 2 | Kiosk server and customer screens, cash only | **Done**, tested end to end against the real controller; not yet on a Pi |
-| 3 | Counter cash + staff tablet (stage 1 of the counter-cash spec) | **Done** — `docs/superpowers/specs/2026-09-28-counter-cash-design.md` |
+| 3 | Counter cash + staff tablet: stage 1 (orders, mark paid) and stage 2 (staff tools) | **Done** — `docs/superpowers/specs/2026-09-28-counter-cash-design.md` |
 | 4 | QR payment | Blocked: backend payment endpoints do not exist yet |
 | 5 | Install runbook for a kiosk Pi | Last |
 
@@ -123,6 +123,7 @@ Ports: controller **8080** (`SOCKET_PORT`), kiosk server **3000**
 | `kiosk_server/lib/orders.js` | The one waiting order: number, frozen price, 3-minute life |
 | `kiosk_server/lib/sessions.js`, `lib/access.js` | Staff sign-in; what the shop Wi-Fi may reach |
 | `kiosk_server/public/staff/` | The staff tablet page |
+| `kiosk_server/lib/logs.js` | Reads the controller's and uploader's records for the staff tools, cached |
 | `CONFIG/config.env.sample` | Every setting. `CONFIG/README.md` explains each |
 | `docs/INSTALLATION.md`, `docs/QUICK_INSTALL.md` | Pi setup. Copied from the cashier product, adapted in piece 5 |
 | `kiosk_exit_tool/` | Keyboard shortcut to escape the locked-down browser |
@@ -176,9 +177,10 @@ not a closed or open socket.
     reads them so one firmware serves both products. The pull-up rules in
     `docs/INSTALLATION.md` still apply if buttons are ever wired.
 11. **Do not re-add the cashier.** No staff-driven cart-and-unlock flow, no
-    cashier dashboard. Staff touch the machine itself only to confirm a cash
-    payment with their PIN, as a fallback; everything else — sign-in, mark
-    paid, cancel, today's sales — is on the staff tablet page (`/staff`).
+    cashier dashboard. Staff confirm a cash payment with their PIN on the
+    kiosk only when `STAFF_TABLET` is off, or as a fallback when it is on;
+    everything else — sign-in, mark paid, cancel, today's sales, prices, air
+    clears, waiting credits — is on the staff tablet page (`/staff`).
 
 ## How the kiosk decides things
 
@@ -212,6 +214,14 @@ not a closed or open socket.
 - **Staff PINs are salted scrypt** (`STAFFn_PIN_HASH`), not the spec's
   `STAFFn_PIN_SHA256`: an unsalted SHA-256 of a short PIN is cracked
   instantly.
+- **Staff tools wait for a free machine.** Prices, air clears and give back
+  are refused while an order waits, presses are owed, or an ARM is on its way
+  (`toolRefusal()` in `server.js`); write off never is. An air clear needs
+  `confirm: true` from the page's "Put a cup under nozzle N" dialog. Every
+  action goes to `logs/staff_events.jsonl` with the staff name.
+- **Waiting credits have no id from the controller.** `lib/logs.js` uses
+  `date_created|slot|qty`; a credit is settled by a `credit_give_back` or
+  `credit_write_off` event naming it, and the list looks back 7 days.
 
 ## Known traps
 

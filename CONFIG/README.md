@@ -103,7 +103,7 @@ can only say "slot 3".
 The uploader deletes every transaction file the moment the cloud accepts it, so
 without this the machine remembers nothing of its own trading. The archive is
 written from the record the cloud acknowledged, so the two cannot drift, and
-the staff menu's today's sales reads it plus anything still queued - a day
+the staff tablet's Today's sales reads it plus anything still queued - a day
 stays complete even if the link has been down since morning.
 
 ### Interrupted sales
@@ -114,7 +114,7 @@ stays complete even if the link has been down since morning.
 
 When a tank runs dry part-way through a pour the controller closes the
 dispense immediately - records the sale at full price, frees the slot, and
-appends here. The staff menu shows today's entries so staff can settle the
+appends here. The staff tablet's Needs attention shows today's entries so staff can settle the
 partial pour with the customer.
 
 Full price is deliberate: it is what the customer was charged. Recording less
@@ -133,12 +133,14 @@ sale is cancelled first (`reason: "cancelled"`). Neither is a sale, so
 this file must stay outside `TRANSACTION_DIR` - the uploader treats every file
 in there as a sale to POST to the cloud.
 
+The staff tablet's Waiting credits lists the last 7 days of entries not yet settled; **Give back** re-arms the presses on the kiosk, **Write off** closes the entry. Both are logged to `logs/staff_events.jsonl` with the staff name.
+
 ### Prices
 
 | Key | Default | Description |
 |-----|---------|-------------|
 | `PRICE1`-`PRICE6` | first value of `calibrateProductN` | Price per press, whole pesos. Becomes the transaction `amount` sent to the cloud |
-| `PRICES_FILE` | `<repo>/CONFIG/prices.conf` | Prices saved from the staff menu. **Overrides `PRICEn`** at startup |
+| `PRICES_FILE` | `<repo>/CONFIG/prices.conf` | Prices saved from the staff tablet. **Overrides `PRICEn`** at startup |
 | `PRICE_LOG` | `<repo>/logs/price_changes.jsonl` | Append-only audit of every price change: slot, old value, new value, timestamp |
 
 Resolution order, last one wins:
@@ -152,12 +154,12 @@ Price and pour duration are deliberately separate keys. Price is commercial and
 changes with the market; duration is physical and set once at install. Keeping
 them in one tuple meant a price edit could fat-finger how much liquid comes out.
 
-Prices are editable from the kiosk's staff menu so a client can set
+Prices are editable from the staff tablet (Tools) so a client can set
 their own without a site visit. That is also a way to make sales look smaller
 than they were, so the controller refuses a change while any sale is armed, and
 writes every change to `PRICE_LOG` with the value it replaced. The log is the
 control: it cannot stop a price being lowered, only stop it being lowered
-quietly.
+quietly. The tablet also refuses a change while an order waits for payment.
 
 ### Prime / purge
 
@@ -180,8 +182,8 @@ settle the short pour.
 Priming clears air from a hose after a gallon change, so the next customer is
 not charged for a press that dispenses air. A prime moves product and records
 **no sale**, which is also what someone stealing from the till would want, so
-every prime is written to `PRIME_LOG` and counted back to staff in the
-staff menu. Nothing is ever written to the transaction
+every prime is written to `PRIME_LOG` and counted back to staff on the staff
+tablet (Air clear). Nothing is ever written to the transaction
 directory by a prime - not even a zero-peso record.
 
 ### Water level sensors (`uploaders`)

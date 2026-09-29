@@ -155,6 +155,12 @@ The kiosk PIN fallback runs the same five steps.
 | **Needs attention** | Today's `INTERRUPTED_LOG` entries (`tank_empty`, `pause_timeout`), for staff to settle with the customer. |
 | **This machine** | Machine ID, controller online/offline, the tablet address, stock per tank. |
 
+**Built 2026-09-29** (`docs/superpowers/plans/2026-09-29-staff-tools-stage2.md`).
+Decided while planning: Waiting credits looks back 7 days and names a credit
+`date_created|slot|qty`; prices on the tablet are whole pesos 1–10000; the
+price history shows the last 10 changes; the Counter tab's Today list reads
+`orders.jsonl`, so it survives a restart.
+
 Left out on purpose: theme switch, fullscreen, the first-run tutorial.
 
 ## 5. Records
