@@ -376,8 +376,9 @@
   }
 
   async function cancelOrder() {
-    if (!myOrder) return;
-    await post('/api/order/cancel', { number: myOrder });
+    const n = myOrder;
+    myOrder = null;   // route() must not read our own cancel as an order that ended by itself
+    if (n) await post('/api/order/cancel', { number: n });
   }
 
   // Two taps: a customer brushing the button should not lose their order.
@@ -398,7 +399,6 @@
   $('pin-back').addEventListener('click', async () => {
     if (staffTablet) { show('order'); return; }
     await cancelOrder();
-    myOrder = null;
     show('pay');
   });
 
