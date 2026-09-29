@@ -19,6 +19,8 @@ const { createController, dispensePaid, SLOTS } = require('./lib/controller');
 const { loadStaff, createPinPad } = require('./lib/staff');
 const { stamp, appendJsonl } = require('./lib/records');
 const { createOrderBook } = require('./lib/orders');
+const { createSessions, tokenFrom, cookieFor, clearCookie, SESSION_MS } = require('./lib/sessions');
+const { isLocal, lanAllowed, lanAddress } = require('./lib/access');
 
 const MAX_QTY = 20;
 
@@ -99,6 +101,20 @@ function createKioskServer({
       staffEvent('pin_locked', { where: 'kiosk' });
     },
   });
+  // The tablet has its own pad, so a stranger hammering the tablet cannot
+  // lock staff out of the kiosk's PIN fallback, or the other way round.
+  const tabletPad = createPinPad(staff, {
+    onLock: () => {
+      log('[kiosk] tablet PIN pad locked after repeated wrong PINs');
+      staffEvent('pin_locked', { where: 'tablet' });
+    },
+  });
+  const sessions = createSessions();
+  const port = parseInt(config.KIOSK_PORT || '3000', 10);
+  // What the QR on the kiosk points at. Null when the tablet is off or the
+  // Pi has no network, and the kiosk then shows no QR.
+  const lanIp = staffTablet ? lanAddress() : null;
+  const staffBase = lanIp ? `http://${lanIp}:${port}` : null;
 
   const ctrl = createController({
     host: config.SOCKET_IP || '127.0.0.1',
@@ -313,6 +329,103 @@ function createKioskServer({
     req.on('close', () => { clearInterval(beat); streams.delete(res); });
   }
 
+  // ---- staff tablet ---------------------------------------------------------
+  const isJson = (req) => /^application\/json/i.test(req.headers['content-type'] || '');
+  const staffName = (req) => { const s = sessions.get(tokenFrom(req)); return s ? s.name : null; };
+
+  // Today's cash, from the payments log so it survives a restart.
+  function todaySummary() {
+    const day = stamp().slice(0, 10);
+    let paid = 0;
+    let total = 0;
+    let text = '';
+    try { text = fs.readFileSync(paymentsLog, 'utf-8'); } catch (_) { /* none yet */ }
+    for (const line of text.split('\n')) {
+      if (!line) continue;
+      try {
+        const p = JSON.parse(line);
+        if (String(p.date_created).startsWith(day)) { paid++; total += p.amount || 0; }
+      } catch (_) { /* a torn line is skipped, not fatal */ }
+    }
+    return { paid, total, orders: orders.closed().slice(0, 20).map(publicOrder) };
+  }
+
+  function staffState() {
+    return {
+      online: ctrl.online,
+      machine: !ctrl.online ? 'offline' : machineInUse() ? 'dispensing' : 'ready',
+      pending: publicOrder(orders.current()),
+      today: todaySummary(),
+    };
+  }
+
+  async function staffLogin(req, res) {
+    if (!isJson(req)) return json(res, 415, { error: 'json_only' });
+    const body = await readBody(req);
+    const who = tabletPad.check(body && body.pin);
+    if (!who.ok) return json(res, ...pinRefusal(who));
+    const token = sessions.create(who.name);
+    staffEvent('sign_in', { staff: who.name });
+    res.setHeader('Set-Cookie', cookieFor(token, SESSION_MS));
+    json(res, 200, { name: who.name });
+  }
+
+  function staffLogout(req, res) {
+    const token = tokenFrom(req);
+    const s = sessions.get(token);
+    if (s) staffEvent('sign_out', { staff: s.name });
+    sessions.destroy(token);
+    res.setHeader('Set-Cookie', clearCookie());
+    json(res, 200, { ok: true });
+  }
+
+  async function staffOrderAction(req, res, name, action) {
+    if (!isJson(req)) return json(res, 415, { error: 'json_only' });
+    const body = await readBody(req);
+    const number = body && body.number;
+    const o = orders.current();
+    if (!o || o.number !== number) {
+      return json(res, 409, { error: 'not_waiting', order: publicOrder(orders.find(number)) });
+    }
+    if (action === 'cancel') {
+      orders.cancel(o, 'staff', name);
+      return json(res, 200, { ok: true, order: publicOrder(o) });
+    }
+    json(res, ...confirmPaid(o, name, 'tablet'));
+  }
+
+  function servePage(res, file) {
+    fs.readFile(file, (err, data) => {
+      if (err) { res.writeHead(404); return res.end('Not found'); }
+      res.writeHead(200, { 'Content-Type': MIME['.html'], 'Cache-Control': 'no-cache' });
+      res.end(data);
+    });
+  }
+
+  function staffRoutes(req, res, url) {
+    if (req.method === 'GET' && (url === '/staff' || url === '/staff/' || /^\/staff\/order\/[A-Z]-\d+$/.test(url))) {
+      return servePage(res, path.join(publicDir, 'staff', 'index.html'));
+    }
+    if (req.method === 'POST' && url === '/staff/api/login') return staffLogin(req, res);
+    if (req.method === 'POST' && url === '/staff/api/logout') return staffLogout(req, res);
+    if (url.startsWith('/staff/api/')) {
+      const name = staffName(req);
+      if (!name) return json(res, 401, { error: 'signed_out' });
+      if (req.method === 'GET' && url === '/staff/api/me') return json(res, 200, { name });
+      if (req.method === 'GET' && url === '/staff/api/state') return json(res, 200, staffState());
+      if (req.method === 'GET' && url === '/staff/api/order') {
+        const number = new URL(req.url, 'http://kiosk').searchParams.get('number');
+        const o = orders.find(number);
+        return o ? json(res, 200, { order: publicOrder(o) }) : json(res, 404, { error: 'unknown_order' });
+      }
+      if (req.method === 'POST' && url === '/staff/api/orders/paid') return staffOrderAction(req, res, name, 'paid');
+      if (req.method === 'POST' && url === '/staff/api/orders/cancel') return staffOrderAction(req, res, name, 'cancel');
+      return json(res, 404, { error: 'unknown' });
+    }
+    if (req.method === 'GET') return serveStatic(req, res);   // /staff/staff.css, /staff/staff.js
+    res.writeHead(405); res.end();
+  }
+
   function serveStatic(req, res) {
     let rel;
     try { rel = decodeURIComponent(req.url.split('?')[0]); } catch (_) { rel = ''; }
@@ -334,8 +447,14 @@ function createKioskServer({
 
   const server = http.createServer((req, res) => {
     const url = req.url.split('?')[0];
+    // From the shop Wi-Fi, the staff page and its pictures only. Everything
+    // that orders, unlocks or pours answers the Pi itself and nobody else.
+    if (!isLocal(req) && !lanAllowed(url)) { res.writeHead(403); return res.end('Forbidden'); }
+    if (url === '/staff' || url.startsWith('/staff/')) return staffRoutes(req, res, url);
     if (req.method === 'GET' && url === '/api/state') {
-      return json(res, 200, { products, idleSeconds, cashReady: staff.length > 0, staffTablet, ...snapshot() });
+      return json(res, 200, {
+        products, idleSeconds, cashReady: staff.length > 0, staffTablet, staffBase, ...snapshot(),
+      });
     }
     if (req.method === 'GET' && url === '/api/stream') return stream(req, res);
     if (req.method === 'POST' && url === '/api/order') return createOrder(req, res);
@@ -351,7 +470,9 @@ function createKioskServer({
   return {
     server,
     ctrl,
-    port: parseInt(config.KIOSK_PORT || '3000', 10),
+    port,
+    // The shop Wi-Fi only when the tablet is switched on.
+    host: staffTablet ? '0.0.0.0' : '127.0.0.1',
     close() {
       clearInterval(expiryTimer);
       ctrl.close();
@@ -366,8 +487,7 @@ module.exports = { createKioskServer, loadEnv };
 
 if (require.main === module) {
   const k = createKioskServer();
-  // Loopback only: the touchscreen is on this Pi, and a server that takes
-  // payment confirmations has no business answering the shop LAN.
-  k.server.listen(k.port, '127.0.0.1', () =>
-    console.log(`[kiosk] listening on http://localhost:${k.port}/`));
+  k.server.listen(k.port, k.host, () =>
+    console.log(`[kiosk] listening on http://localhost:${k.port}/`
+      + (k.host === '0.0.0.0' ? '  (staff tablet: /staff on the shop Wi-Fi)' : '')));
 }
