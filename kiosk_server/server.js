@@ -297,15 +297,16 @@ function createKioskServer({
     const batch = itemsText(o.items);
     if (!ctrl.send(`ARM_BATCH,${batch}`)) return [503, { error: 'offline' }];
     armingUntil = Date.now() + 3000;
+    const method = o.method === 'qr' ? 'qr_demo' : 'cash';
     record(paymentsLog, {
-      reference: o.reference, method: o.method === 'qr' ? 'qr_demo' : 'cash', amount: o.amount, items: batch,
+      reference: o.reference, method, amount: o.amount, items: batch,
       staff: name, via, date_created: stamp(),
     });
     dispenseOrder = {
       reference: o.reference, staff: o.method === 'qr' ? null : name,
       items: o.items.map(({ slot, qty }) => ({ slot, qty })),
     };
-    log(`[kiosk] cash ${o.reference} P${o.amount} by ${name} via ${via}: ARM_BATCH,${batch}`);
+    log(`[kiosk] ${method} ${o.reference} P${o.amount} by ${name} via ${via}: ARM_BATCH,${batch}`);
     orders.paid(o, name);   // onClose pushes the new state to the screens
     return [200, { ok: true, order: publicOrder(o) }];
   }
