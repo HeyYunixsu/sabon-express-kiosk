@@ -31,6 +31,9 @@
   let audio = null;
   let view = 'overview';
   try { const v = sessionStorage.getItem('staff-view'); if (VIEWS.includes(v)) view = v; } catch (_) { /* no storage */ }
+  // A scanned order link always opens on Overview, where the waiting-order
+  // card and its note live -- never wherever the last shift left the page.
+  if (focus) view = 'overview';
   const range = { overview: 'today', transactions: 'today' };
   let week = null;              // the 7-day orders, from /staff/api/orders
   let weekTimer = null;
@@ -129,8 +132,7 @@
     for (const b of document.querySelectorAll('#s-nav button')) b.classList.toggle('on', b.dataset.view === view);
     try { sessionStorage.setItem('staff-view', view); } catch (_) { /* no storage */ }
     clearTimeout(toolsTimer);
-    // Overview reads the tools once, for the needs-attention banner.
-    if (view === 'overview') loadTools(true); else loadTools();
+    loadTools();
     loadWeek();
     renderBusy();
     renderOrders();
@@ -169,6 +171,13 @@
       netDown = true;
       $('w-msg').className = 's-msg';
       $('w-msg').textContent = 'Cannot reach the kiosk. Check the Wi-Fi.';
+      // "System Online" must not stay green during a drop; the next good
+      // poll calls render(), which puts both back from state.
+      $('s-sys').classList.add('is-off');
+      $('s-sys-word').textContent = 'No connection';
+      const st = $('s-state');
+      st.className = 'd-chip is-offline';
+      st.querySelector('b').textContent = 'No connection';
     }
     setTimeout(poll, 1000);
   }
@@ -186,6 +195,8 @@
 
   const hm = (d) => `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
   const dateOf = (d) => `${MONTHS[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
+  // YYYY-MM-DD, to match the "closed" field's date prefix, local time like the server.
+  const todayStr = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 
   function render() {
     if (!state) return;
@@ -203,6 +214,8 @@
     renderKpis();
     renderStatus();
     renderOrders();
+    renderBanner();
+    renderNavDot();
     $('q-credits').hidden = !state.waitingCredits;
     $('q-credits').textContent = state.waitingCredits;
   }
@@ -258,11 +271,15 @@
   }
 
   // ---- stat cards ---------------------------------------------------------------
-  function delta(now, before) {
-    if (before === 0) return now > 0 ? '<span class="up">new today</span>' : '<span class="flat">— same as yesterday</span>';
+  // invert: for a number where more is bad (cancelled), so a rise still gets
+  // the red "down" class and a fall the green "up" one.
+  function delta(now, before, invert) {
+    const cls = (up) => (invert ? !up : up) ? 'up' : 'down';
+    if (before === 0) return now > 0 ? `<span class="${cls(true)}">new today</span>` : '<span class="flat">— same as yesterday</span>';
     if (now === before) return '<span class="flat">— same as yesterday</span>';
+    const up = now > before;
     const pct = Math.round((Math.abs(now - before) / before) * 100);
-    return `<span class="${now > before ? 'up' : 'down'}">${now > before ? '↑' : '↓'} ${pct}%</span> <span class="nw">vs. yesterday</span>`;
+    return `<span class="${cls(up)}">${up ? '↑' : '↓'} ${pct}%</span> <span class="nw">vs. yesterday</span>`;
   }
 
   // Running total of the hourly values up to this hour, as a line and a
@@ -296,7 +313,7 @@
     kpi('k-sales', peso(t.sales), delta(t.sales, y.sales), `${t.paid} ${t.paid === 1 ? 'order' : 'orders'}`, t.hourly.sales);
     kpi('k-paid', t.paid, delta(t.paid, y.paid), '', t.hourly.paid);
     kpi('k-pending', o ? 1 : 0, '', o ? `Order ${o.number}` : 'No pending', null);
-    kpi('k-cancel', t.cancelled, delta(t.cancelled, y.cancelled), '', t.hourly.cancelled);
+    kpi('k-cancel', t.cancelled, delta(t.cancelled, y.cancelled, true), '', t.hourly.cancelled);
   }
 
   // ---- kiosk status -------------------------------------------------------------
@@ -331,16 +348,25 @@
 
   // ---- orders table -------------------------------------------------------------
   const BADGE = { paid: ['Paid', 'check'], cancelled: ['Cancelled', 'x'], expired: ['Expired', 'clock'] };
+  // The reason in words, under the badge, visible without a hover.
+  const REASON_WORDS = {
+    customer: 'by customer', staff: 'by staff', out_of_stock: 'product ran out',
+    price_changed: 'price changed', timeout: 'not paid in time',
+  };
   function orderRows(rows, withDate) {
     return rows.map((x) => {
       const [label, ic] = BADGE[x.status] || [x.status, 'clock'];
-      const who = x.method === 'qr' ? 'QR demo' : x.by || (x.reason === 'customer' ? 'customer' : '—');
+      // A QR order cancelled by the customer still says "customer", not "QR demo".
+      const who = x.reason === 'customer' ? 'customer' : x.by || (x.method === 'qr' ? 'QR demo' : '—');
       const c = String(x.closed || '');
       const time = withDate && c ? `${MONTHS[Number(c.slice(5, 7)) - 1]} ${Number(c.slice(8, 10))} · ${c.slice(11, 16)}` : c.slice(11, 16);
       const why = x.status === 'cancelled' && x.reason ? ` title="Cancelled: ${esc(x.reason)}"` : '';
+      const reasonWord = REASON_WORDS[x.reason];
+      const reasonLine = (x.status === 'cancelled' || x.status === 'expired') && reasonWord
+        ? `<small class="d-reason">${esc(reasonWord)}</small>` : '';
       return `<tr class="is-${esc(x.status)}">
         <td>${esc(x.number)}</td><td>${peso(x.amount)}</td>
-        <td><span class="d-badge b-${esc(x.status)}"${why}><i>${icon(ic)}</i>${esc(label)}</span></td>
+        <td><span class="d-badge b-${esc(x.status)}"${why}><i>${icon(ic)}</i>${esc(label)}</span>${reasonLine}</td>
         <td>${esc(who)}</td><td>${esc(time)}</td>
       </tr>`;
     }).join('') || `<tr class="is-none"><td colspan="5">${withDate ? 'No orders in the last 7 days.' : 'No orders yet today.'}</td></tr>`;
@@ -356,18 +382,30 @@
     for (const [which, list, sum, limit] of [['overview', 't-list', 't-sum', 5], ['transactions', 'o-list', 'o-sum', 200]]) {
       const wk = range[which] === '7d';
       for (const b of document.querySelectorAll(`.d-switch[data-for="${which}"] button`)) b.classList.toggle('on', b.dataset.range === range[which]);
-      if (wk && !week) { put(list, '<tr class="is-none"><td colspan="5">Loading…</td></tr>'); continue; }
-      const rows = wk ? week : state.today.orders;
+      // Transactions' Today is every order today, from the same 7-day fetch
+      // as the 7d switch -- state.today.orders is capped at 20 by the server.
+      const fromWeek = wk || which === 'transactions';
+      if (fromWeek && !week) { put(list, '<tr class="is-none"><td colspan="5">Loading…</td></tr>'); continue; }
+      const rows = wk ? week
+        : which === 'transactions' ? week.filter((o) => o.closed.startsWith(todayStr()))
+        : state.today.orders;
       put(list, orderRows(rows.slice(0, limit), wk));
-      $(sum).textContent = wk ? `${paidSum(rows)} · last 7 days` : `${state.today.paid} paid · ${peso(state.today.total)}`;
+      $(sum).textContent = wk ? `${paidSum(rows)} · last 7 days`
+        // Overview's footer agrees with the Paid Orders card, which counts
+        // QR demo orders too; the cash total stays cash-only.
+        : which === 'overview' ? `${state.stats.today.paid} paid · ${peso(state.today.total)} cash`
+        : `${state.today.paid} paid · ${peso(state.today.total)}`;
     }
   }
 
-  // The 7-day list, every 10 s while a table shows it.
+  // The 7-day list, every 10 s while a table shows it. Transactions needs it
+  // for Today too (the full day, not state's latest 20), so it fetches
+  // whatever range is showing there; Overview only needs it for the 7d switch.
   async function loadWeek() {
     clearTimeout(weekTimer);
     const gen = ++weekGen;   // an older load still in flight is dropped
-    if (!me || !['overview', 'transactions'].includes(view) || range[view] !== '7d') return;
+    if (!me || !['overview', 'transactions'].includes(view)) return;
+    if (view === 'overview' && range.overview !== '7d') return;
     const r = await api('/staff/api/orders');
     if (gen !== weekGen) return;
     if (r.code === 200) { week = r.body.orders; renderOrders(); }
@@ -480,12 +518,13 @@
   }
   const failed = (r) => TOOL_MSG[r.body.error || r.body.result] || 'That did not work — try again.';
 
-  // Every 3 s while a tools section is open (once, for Overview's banner).
-  // A 401 is left to the state poll, which signs the page out.
-  async function loadTools(once) {
+  // Every 3 s while a tools section is open. Overview needs none of this --
+  // its banner reads state.attention instead. A 401 is left to the state
+  // poll, which signs the page out.
+  async function loadTools() {
     clearTimeout(toolsTimer);
     const gen = ++toolsGen;   // an older load still in flight is dropped
-    if (!me || (view === 'overview' && !once)) return;
+    if (!me || view === 'overview') return;
     const r = await api('/staff/api/tools');
     if (r.code === 401 || gen !== toolsGen) return;
     if (r.code === 200) { tools = r.body; renderTools(); }
@@ -499,8 +538,14 @@
     $('x-busy').textContent = msg;
   }
 
+  // A waiting order pulses on the Overview nav item, so it is visible from
+  // every section, not only when Overview itself is open.
+  function renderNavDot() {
+    $('s-nav-dot').hidden = !state.pending;
+  }
+
   function renderBanner() {
-    const n = tools ? tools.attention.length : 0;
+    const n = (state && state.attention) || 0;
     const b = $('d-banner');
     b.classList.toggle('is-alert', n > 0);
     if (n) b.dataset.go = 'health'; else delete b.dataset.go;
@@ -513,7 +558,6 @@
   function renderTools() {
     const t = tools;
     renderBusy();
-    renderBanner();
 
     // Prices: rows built once, so a poll never overwrites what is being typed.
     const list = $('x-prices');
