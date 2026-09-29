@@ -21,8 +21,11 @@ const { stamp, appendJsonl } = require('./lib/records');
 const { createOrderBook } = require('./lib/orders');
 const { createSessions, tokenFrom, cookieFor, clearCookie, SESSION_MS } = require('./lib/sessions');
 const { isLocal, lanAllowed, lanAddress } = require('./lib/access');
+const { readJsonl, logPaths, salesToday, openCredits } = require('./lib/logs');
 
 const MAX_QTY = 20;
+const MAX_PRICE = 10000;   // the controller's own limit, controller/includes/hardware_config.h
+const CREDIT_DAYS = 7;     // how far back Waiting credits looks
 
 function loadEnv(file) {
   const vars = {};
@@ -69,6 +72,9 @@ function createKioskServer({
   const paymentsLog = path.join(logsDir, 'payments.jsonl');
   const ordersLog = path.join(logsDir, 'orders.jsonl');
   const staffLog = path.join(logsDir, 'staff_events.jsonl');
+  const logs = logPaths(config, root);
+  // What the controller runs a prime for, clamped as the controller clamps it.
+  const primeSeconds = Math.min(15, Math.max(0.5, parseFloat(config.PRIME_SECONDS) || 3));
 
   const products = [];
   for (let i = 1; i <= SLOTS; i++) {
@@ -350,21 +356,20 @@ function createKioskServer({
   const isJson = (req) => /^application\/json/i.test(req.headers['content-type'] || '');
   const staffName = (req) => { const s = sessions.get(tokenFrom(req)); return s ? s.name : null; };
 
-  // Today's cash, from the payments log so it survives a restart.
+  const today = () => stamp().slice(0, 10);
+  const onToday = (field) => (r) => String(r[field] || '').startsWith(today());
+
+  // Today's cash and orders, from the logs so they survive a restart.
   function todaySummary() {
-    const day = stamp().slice(0, 10);
-    let paid = 0;
-    let total = 0;
-    let text = '';
-    try { text = fs.readFileSync(paymentsLog, 'utf-8'); } catch (_) { /* none yet */ }
-    for (const line of text.split('\n')) {
-      if (!line) continue;
-      try {
-        const p = JSON.parse(line);
-        if (String(p.date_created).startsWith(day)) { paid++; total += p.amount || 0; }
-      } catch (_) { /* a torn line is skipped, not fatal */ }
-    }
-    return { paid, total, orders: orders.closed().slice(0, 20).map(publicOrder) };
+    const pays = readJsonl(paymentsLog).filter(onToday('date_created'));
+    return {
+      paid: pays.length,
+      total: pays.reduce((a, p) => a + (p.amount || 0), 0),
+      orders: readJsonl(ordersLog).filter(onToday('closed')).slice(-20).reverse().map((o) => ({
+        number: String(o.reference).split('-').slice(1).join('-'),
+        amount: o.amount, status: o.status, reason: o.reason, by: o.by, closed: o.closed,
+      })),
+    };
   }
 
   function staffState() {
@@ -373,6 +378,54 @@ function createKioskServer({
       machine: !ctrl.online ? 'offline' : machineInUse() ? 'dispensing' : 'ready',
       pending: publicOrder(orders.current()),
       today: todaySummary(),
+    };
+  }
+
+  // Price changes, air clears and give-backs wait for a free machine: no
+  // order waiting (its prices are frozen and it may be paid any second), no
+  // presses owed, no ARM on its way.
+  function toolRefusal() {
+    if (!ctrl.online) return [503, { error: 'offline' }];
+    if (orders.current()) return [409, { error: 'order_waiting' }];
+    if (Date.now() < armingUntil || machineInUse()) return [409, { error: 'machine_busy' }];
+    return null;
+  }
+
+  const creditSince = () => stamp(new Date(Date.now() - (CREDIT_DAYS - 1) * 86400000)).slice(0, 10);
+
+  function staffTools() {
+    const primesToday = {};
+    for (const r of readJsonl(logs.primes).filter(onToday('date_created'))) {
+      primesToday[Number(r.slot)] = (primesToday[Number(r.slot)] || 0) + 1;
+    }
+    const cashByStaff = {};
+    for (const p of readJsonl(paymentsLog).filter(onToday('date_created'))) {
+      const c = cashByStaff[p.staff] || (cashByStaff[p.staff] = { count: 0, amount: 0 });
+      c.count++;
+      c.amount += p.amount || 0;
+    }
+    const refused = toolRefusal();
+    return {
+      products: products.map(({ slot, name, img }) => ({ slot, name, img })),
+      prices: ctrl.prices,
+      priceHistory: readJsonl(logs.prices).slice(-10).reverse().map((r) => ({
+        slot: Number(r.slot), from: r.from, to: r.to, date_created: r.date_created,
+      })),
+      primeSeconds,
+      primesToday,
+      sales: salesToday(logs, today()),
+      cashByStaff,
+      credits: openCredits(readJsonl(logs.unclaimed), readJsonl(staffLog), creditSince()),
+      attention: readJsonl(logs.interrupted).filter(onToday('date_created')).reverse().map((r) => ({
+        slot: Number(r.slot), amount: r.amount, reason: r.reason, date_created: r.date_created,
+      })),
+      machine: {
+        machineId: config.machineId || '',
+        online: ctrl.online,
+        staffBase: staffBase(),
+        stock: ctrl.status ? ctrl.status.slots.map((s) => ({ slot: s.slot, empty: s.empty })) : [],
+      },
+      busy: refused ? refused[1].error : null,
     };
   }
 
@@ -430,6 +483,7 @@ function createKioskServer({
       if (!name) return json(res, 401, { error: 'signed_out' });
       if (req.method === 'GET' && url === '/staff/api/me') return json(res, 200, { name });
       if (req.method === 'GET' && url === '/staff/api/state') return json(res, 200, staffState());
+      if (req.method === 'GET' && url === '/staff/api/tools') return json(res, 200, staffTools());
       if (req.method === 'GET' && url === '/staff/api/order') {
         const number = new URL(req.url, 'http://kiosk').searchParams.get('number');
         const o = orders.find(number);
