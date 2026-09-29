@@ -1,0 +1,31 @@
+/* QR payment demo -- the phone's pay page, in the kiosk's black and blue. */
+@font-face { font-family:'Helvetica Neue LT'; font-weight:400; font-display:swap; src:url('/fonts/helvetica-neue-400.woff2') format('woff2'); }
+@font-face { font-family:'Helvetica Neue LT'; font-weight:700; font-display:swap; src:url('/fonts/helvetica-neue-700.woff2') format('woff2'); }
+
+:root {
+  --bg: #0B0E14; --surface: #141925; --surface-sub: #1C2333;
+  --ink: #F5F7FA; --ink-2: #8A93A6; --line: #232A3B;
+  --brand: #3B6DF0; --green: #34D399; --amber: #FBBF24; --red: #F87171;
+  font-family: 'Helvetica Neue LT', system-ui, sans-serif;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; background: var(--bg); color: var(--ink); -webkit-tap-highlight-color: transparent; }
+body { max-width: 480px; margin: 0 auto; padding: 0 14px 40px; }
+button { font: inherit; border: 0; cursor: pointer; touch-action: manipulation; }
+
+.p-demo { margin: 0 -14px 16px; padding: 10px 14px; background: var(--amber); color: #1A1300; font-weight: 700; text-align: center; letter-spacing: .02em; }
+.p-card { background: var(--surface); border: 1px solid var(--line); border-radius: 20px; padding: 20px; text-align: center; }
+.p-logo { height: 44px; }
+.p-card h1 { margin: 10px 0 4px; font-size: 24px; }
+.p-num { margin: 0 0 14px; color: var(--ink-2); }
+.p-items { list-style: none; margin: 0; padding: 0; text-align: left; }
+.p-items li { display: flex; justify-content: space-between; gap: 10px; padding: 12px 4px; border-top: 1px solid var(--line); font-size: 17px; }
+.p-items li:first-child { border-top: 0; }
+.p-items li span:last-child { color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.p-total { display: flex; justify-content: space-between; align-items: baseline; margin: 12px 4px 18px; font-size: 18px; }
+.p-total b { font-size: 36px; color: #8FB0FF; font-variant-numeric: tabular-nums; }
+.p-pay { width: 100%; min-height: 64px; border-radius: 999px; background: var(--brand); color: #fff; font-size: 22px; font-weight: 700; }
+.p-pay:disabled { opacity: .5; }
+.p-state { min-height: 24px; margin: 16px 0 0; font-weight: 700; color: var(--red); }
+.p-state.is-ok { color: var(--green); font-size: 20px; }
