@@ -717,6 +717,7 @@
       cashReady = s.cashReady;
       staffTablet = !!s.staffTablet;
       qrDemo = !!s.qrDemo;
+      if (qrDemo) $('kpi-pay').textContent = 'Cash · QR';
       staffBase = s.staffBase || null;
       buildGrid();
       show('attract');
