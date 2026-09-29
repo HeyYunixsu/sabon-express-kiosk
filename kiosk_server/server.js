@@ -581,6 +581,7 @@ function createKioskServer({
         machineId: config.machineId || '',
         online: ctrl.online,
         staffBase: staffBase(),
+        qrDemo,
         stock: ctrl.status ? ctrl.status.slots.map((s) => ({ slot: s.slot, empty: s.empty })) : [],
       },
       busy: refused ? refused[1].error : null,

@@ -69,6 +69,7 @@
   // tap, and signing in is that tap.
   function chime() {
     if (!audio) return;
+    if (audio.state === 'suspended') audio.resume();   // allowed once the page has been tapped
     const t = audio.currentTime;
     for (const [f, at] of [[880, 0], [1320, 0.16]]) {
       const o = audio.createOscillator();
@@ -104,7 +105,9 @@
   // Browsers only allow sound after a tap. A reload lands back on the
   // dashboard already signed in (the session cookie), so the chime for the
   // next new order needs its tap from anywhere on the page, not only Sign in.
-  document.addEventListener('pointerdown', () => {
+  // click, not pointerdown: on touch, the tap only counts as a user gesture
+  // once the finger lifts, and a context made earlier starts suspended.
+  document.addEventListener('click', () => {
     try { audio = audio || new (window.AudioContext || window.webkitAudioContext)(); } catch (_) { /* no audio */ }
   }, { once: true });
 
@@ -631,7 +634,7 @@
     put('x-machine', `<dt>Machine ID</dt><dd>${esc(m.machineId || '—')}</dd>
       <dt>Controller</dt><dd class="${m.online ? 'ok' : 'bad'}">${m.online ? 'Online' : 'Offline'}</dd>
       <dt>Staff page</dt><dd>${esc(m.staffBase ? `${m.staffBase}/staff` : 'No network address')}</dd>
-      <dt>QR demo</dt><dd class="${state.qrDemo ? 'warn' : ''}">${state.qrDemo ? 'On — QR payments are pretend' : 'Off'}</dd>
+      <dt>QR demo</dt><dd class="${m.qrDemo ? 'warn' : ''}">${m.qrDemo ? 'On — QR payments are pretend' : 'Off'}</dd>
       ${t.products.map((p) => {
         const st = stockOf(p.slot);
         return `<dt>${esc(p.name)}</dt><dd class="${!st ? '' : st.empty ? 'bad' : 'ok'}">${!st ? '—' : st.empty ? 'Empty' : 'Has stock'}</dd>`;
