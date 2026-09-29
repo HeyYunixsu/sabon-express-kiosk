@@ -159,6 +159,12 @@ function createKioskServer({
   const orders = createOrderBook({
     letter,
     timeoutMs,
+    // After a restart, carry on today's numbering from the orders log, so a
+    // reference is never used twice in one day.
+    lastNumber: (d) => readJsonl(ordersLog).reduce((max, o) => {
+      const m = String(o.reference || '').match(new RegExp(`^${d}-${letter}-(\\d+)$`));
+      return m ? Math.max(max, Number(m[1])) : max;
+    }, 0),
     onClose: (o) => {
       record(ordersLog, {
         reference: o.reference, method: o.method, items: itemsText(o.items), amount: o.amount,
@@ -479,6 +485,7 @@ function createKioskServer({
       stats: dashboardStats(),
       status: kioskStatus(),
       waitingCredits: openCredits(readJsonl(logs.unclaimed), readJsonl(staffLog), creditSince()).length,
+      attention: readJsonl(logs.interrupted).filter(onToday('date_created')).length,
     };
   }
 

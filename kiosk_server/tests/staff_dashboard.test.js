@@ -90,6 +90,34 @@ test('waiting credits count and today rows carry the method', async (t) => {
   assert.deepStrictEqual(s.today.orders.map((o) => [o.number, o.method]), [['A-2', 'qr'], ['A-1', 'cash']]);
 });
 
+test('S1: order numbers carry on from the orders log after a restart', async (t) => {
+  // Seeded before the server starts: the order book rolls its day off the
+  // first STATUS tick, which lands before a post-start write would.
+  const { k } = await kiosk(t, {
+    preListen: (dir) => {
+      const f = path.join(dir, 'logs', 'orders.jsonl');
+      fs.mkdirSync(path.dirname(f), { recursive: true });
+      fs.writeFileSync(f, JSON.stringify({
+        reference: `${day(0).replace(/-/g, '')}-A-5`, amount: 10, status: 'paid', by: 'Ana', closed: `${day(0)} 09:00:00`,
+      }) + '\n');
+    },
+  });
+  const r = await k.post('/api/order', { items: [{ slot: 1, qty: 1 }], amount: 5 });
+  assert.strictEqual(r.code, 200);
+  assert.strictEqual(r.body.order.number, 'A-6');
+});
+
+test('S2: attention counts only today\'s interrupted pours', async (t) => {
+  const { k, headers } = await kiosk(t);
+  writeRows(k, 'logs/interrupted_sales.jsonl', [
+    { slot: 1, amount: 10, reason: 'tank_empty', date_created: `${day(0)} 09:00:00` },
+    { slot: 2, amount: 15, reason: 'pause_timeout', date_created: `${day(0)} 09:30:00` },
+    { slot: 3, amount: 5, reason: 'tank_empty', date_created: '1999-01-01 00:00:00' },
+  ]);
+  const s = await state(k, headers);
+  assert.strictEqual(s.attention, 2);
+});
+
 test('GET /staff/api/orders: last 7 days, newest first, signed in only', async (t) => {
   const { k, headers } = await kiosk(t);
   const ord = (offset, n) => ({ reference: `${day(offset).replace(/-/g, '')}-A-${n}`, amount: 5, status: 'paid', by: 'Ana', closed: `${day(offset)} 12:00:00` });

@@ -80,8 +80,12 @@ function stubController() {
   }));
 }
 
-// config: extra config.env lines. host: where the kiosk listens.
-async function startKiosk(stub, { config = [], host = '127.0.0.1', orderTimeoutMs } = {}) {
+// config: extra config.env lines. host: where the kiosk listens. preListen:
+// called with the temp dir before the server starts accepting connections,
+// so a test can seed a log file as if it were already there from before a
+// restart -- the order book's day is rolled off the first STATUS tick, which
+// can arrive before a post-start write would land.
+async function startKiosk(stub, { config = [], host = '127.0.0.1', orderTimeoutMs, preListen } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kiosk-'));
   fs.mkdirSync(path.join(dir, 'CONFIG'));
   fs.writeFileSync(path.join(dir, 'CONFIG', 'config.env'), [
@@ -93,6 +97,7 @@ async function startKiosk(stub, { config = [], host = '127.0.0.1', orderTimeoutM
     `STAFF2_PIN_HASH = ${hashPin('7777')}`,
     ...config,
   ].join('\n'));
+  if (preListen) preListen(dir);
   const k = createKioskServer({
     root: dir,
     controller: { offlineMs: 400, reconnectMs: 100 },
