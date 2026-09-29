@@ -47,6 +47,16 @@ function stubController() {
         if (verb === 'GETPRICES') s.write(`PRICES,${stub.prices}\n`);
         if (verb === 'DISPENSE') s.write(`DISPENSE_ACK,${slot},${stub.dispenseReplies.shift() || 'no_credit'}\n`);
         if (verb === 'PAUSE') s.write(`PAUSE_ACK,${slot},ok\n`);
+        if (verb === 'SETPRICE') {
+          const r = stub.priceReply || 'ok';
+          if (r === 'ok') {
+            const p = stub.prices.split(',');
+            p[Number(slot) - 1] = l.split(',')[2];
+            stub.prices = p.join(',');
+          }
+          s.write(`PRICE_ACK,${slot},${r}\n`);
+        }
+        if (verb === 'PRIME') s.write(`PRIME_ACK,${slot},${stub.primeReply || 'started'}\n`);
       }
     });
   });

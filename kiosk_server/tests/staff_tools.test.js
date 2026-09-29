@@ -87,3 +87,81 @@ test('the Today list comes from orders.jsonl, so a restart keeps it', async (t) 
   const s = (await k.get('/staff/api/state', headers)).body;
   assert.deepStrictEqual(s.today.orders.map((o) => [o.number, o.by, o.status]), [['A-4', 'Ben', 'paid']]);
 });
+
+test('prices: changed with SETPRICE, logged with the staff name', async (t) => {
+  const { stub, k, headers } = await kiosk(t);
+
+  await t.test('a price that is not a whole number of pesos from 1 to 10000 is refused', async () => {
+    for (const price of [0, 2.5, '7', 10001]) {
+      const r = await k.post('/staff/api/price', { slot: 1, price }, headers);
+      assert.deepStrictEqual([r.code, r.body.error], [400, 'bad_price'], String(price));
+    }
+    assert.deepStrictEqual(sent(stub, 'SETPRICE'), []);
+  });
+
+  await t.test('refused while an order waits', async () => {
+    const { body } = await k.post('/api/order', sale);
+    const r = await k.post('/staff/api/price', { slot: 1, price: 7 }, headers);
+    assert.deepStrictEqual([r.code, r.body.error], [409, 'order_waiting']);
+    assert.strictEqual((await k.get('/staff/api/tools', headers)).body.busy, 'order_waiting');
+    await k.post('/api/order/cancel', { number: body.order.number });
+    assert.deepStrictEqual(sent(stub, 'SETPRICE'), []);
+  });
+
+  await t.test('refused while presses are owed', async () => {
+    stub.armed[0] = 1;
+    await until(() => k.ctrl.status.slots[0].armed === 1);
+    const r = await k.post('/staff/api/price', { slot: 1, price: 7 }, headers);
+    assert.deepStrictEqual([r.code, r.body.error], [409, 'machine_busy']);
+    stub.armed[0] = 0;
+    await until(() => k.ctrl.status.slots[0].armed === 0);
+  });
+
+  await t.test('a free machine takes the new price and the kiosk hears it', async () => {
+    const r = await k.post('/staff/api/price', { slot: 1, price: 7 }, headers);
+    assert.deepStrictEqual([r.code, r.body.result], [200, 'ok']);
+    assert.deepStrictEqual(sent(stub, 'SETPRICE'), ['SETPRICE,1,7']);
+    await until(() => k.ctrl.prices[1] === 7);
+    const ev = k.rows('staff_events.jsonl').find((e) => e.event === 'price_change');
+    assert.deepStrictEqual([ev.staff, ev.slot, ev.from, ev.to, ev.result], ['Ana', 1, 5, 7, 'ok']);
+  });
+
+  await t.test('a controller refusal is passed on and not logged as a change', async () => {
+    stub.priceReply = 'sale_in_progress';
+    const r = await k.post('/staff/api/price', { slot: 2, price: 9 }, headers);
+    assert.deepStrictEqual([r.code, r.body.result], [409, 'sale_in_progress']);
+    assert.strictEqual(k.rows('staff_events.jsonl').filter((e) => e.event === 'price_change').length, 1);
+  });
+});
+
+test('air clear: needs its confirm, runs PRIME, logged with the staff name', async (t) => {
+  const { stub, k, headers } = await kiosk(t);
+
+  await t.test('without the confirm no pump runs', async () => {
+    const r = await k.post('/staff/api/prime', { slot: 3 }, headers);
+    assert.deepStrictEqual([r.code, r.body.error], [400, 'not_confirmed']);
+    assert.deepStrictEqual(sent(stub, 'PRIME'), []);
+  });
+
+  await t.test('refused while an order waits', async () => {
+    const { body } = await k.post('/api/order', sale);
+    const r = await k.post('/staff/api/prime', { slot: 3, confirm: true }, headers);
+    assert.deepStrictEqual([r.code, r.body.error], [409, 'order_waiting']);
+    await k.post('/api/order/cancel', { number: body.order.number });
+    assert.deepStrictEqual(sent(stub, 'PRIME'), []);
+  });
+
+  await t.test('confirmed on a free machine it runs and is logged', async () => {
+    const r = await k.post('/staff/api/prime', { slot: 3, confirm: true }, headers);
+    assert.deepStrictEqual([r.code, r.body.result], [200, 'started']);
+    assert.deepStrictEqual(sent(stub, 'PRIME'), ['PRIME,3']);
+    const ev = k.rows('staff_events.jsonl').find((e) => e.event === 'prime');
+    assert.deepStrictEqual([ev.staff, ev.slot, ev.result], ['Ana', 3, 'started']);
+  });
+
+  await t.test('a controller refusal is passed on', async () => {
+    stub.primeReply = 'slot_empty';
+    const r = await k.post('/staff/api/prime', { slot: 4, confirm: true }, headers);
+    assert.deepStrictEqual([r.code, r.body.result], [409, 'slot_empty']);
+  });
+});

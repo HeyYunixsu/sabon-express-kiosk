@@ -429,6 +429,48 @@ function createKioskServer({
     };
   }
 
+  // A controller reply as an HTTP code: accepted, not reachable, or refused.
+  const ackCode = (result, accepted) =>
+    accepted.includes(result) ? 200 : result === 'offline' || result === 'timeout' ? 503 : 409;
+
+  async function staffSetPrice(req, res, name) {
+    if (!isJson(req)) return json(res, 415, { error: 'json_only' });
+    const body = await readBody(req);
+    const slot = body && body.slot;
+    const price = body && body.price;
+    if (!validSlot(slot) || !Number.isInteger(price) || price < 1 || price > MAX_PRICE) {
+      return json(res, 400, { error: 'bad_price' });
+    }
+    const refused = toolRefusal();
+    if (refused) return json(res, ...refused);
+    const from = ctrl.prices[slot];
+    const result = await ctrl.request(`SETPRICE,${slot},${price}`);
+    if (result === 'ok' || result === 'not_saved') {
+      // The controller does not broadcast a change: ask, so the kiosk's
+      // screens and the next order use the new price.
+      ctrl.send('GETPRICES');
+      staffEvent('price_change', { staff: name, slot, from, to: price, result });
+      log(`[kiosk] price slot ${slot} ${from} -> ${price} by ${name} (${result})`);
+    }
+    json(res, ackCode(result, ['ok', 'not_saved']), { result });
+  }
+
+  async function staffPrime(req, res, name) {
+    if (!isJson(req)) return json(res, 415, { error: 'json_only' });
+    const body = await readBody(req);
+    const slot = body && body.slot;
+    if (!validSlot(slot)) return json(res, 400, { error: 'bad_slot' });
+    // The page first asks "Put a cup under nozzle N"; a POST without that
+    // answer does not run a pump.
+    if (body.confirm !== true) return json(res, 400, { error: 'not_confirmed' });
+    const refused = toolRefusal();
+    if (refused) return json(res, ...refused);
+    const result = await ctrl.request(`PRIME,${slot}`);
+    staffEvent('prime', { staff: name, slot, result });
+    log(`[kiosk] prime slot ${slot} by ${name}: ${result}`);
+    json(res, ackCode(result, ['started']), { result });
+  }
+
   async function staffLogin(req, res) {
     if (!isJson(req)) return json(res, 415, { error: 'json_only' });
     const body = await readBody(req);
@@ -484,6 +526,8 @@ function createKioskServer({
       if (req.method === 'GET' && url === '/staff/api/me') return json(res, 200, { name });
       if (req.method === 'GET' && url === '/staff/api/state') return json(res, 200, staffState());
       if (req.method === 'GET' && url === '/staff/api/tools') return json(res, 200, staffTools());
+      if (req.method === 'POST' && url === '/staff/api/price') return staffSetPrice(req, res, name);
+      if (req.method === 'POST' && url === '/staff/api/prime') return staffPrime(req, res, name);
       if (req.method === 'GET' && url === '/staff/api/order') {
         const number = new URL(req.url, 'http://kiosk').searchParams.get('number');
         const o = orders.find(number);

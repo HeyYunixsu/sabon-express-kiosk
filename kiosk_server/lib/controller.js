@@ -121,11 +121,15 @@ function createController({ host = '127.0.0.1', port = 8080, offlineMs = 6000,
     return true;
   }
 
+  // The controller answers most VERB with VERB_ACK; SETPRICE is the exception.
+  const ACK_VERB = { SETPRICE: 'PRICE' };
+
   // Sends VERB,<slot>[,…] and resolves with the result field of VERB_ACK for
   // that slot, or 'offline' / 'timeout'. One request at a time, so an ACK can
   // never be matched to the wrong command.
   function request(cmd) {
-    const [verb, slotStr] = cmd.split(',');
+    const [cmdVerb, slotStr] = cmd.split(',');
+    const verb = ACK_VERB[cmdVerb] || cmdVerb;
     const slot = Number(slotStr);
     const run = () => new Promise((resolve) => {
       if (!online || !send(cmd)) return resolve('offline');
