@@ -16,6 +16,11 @@
   </header>
 
   <main>
+    <nav class="s-tabs" id="s-tabs" hidden>
+      <button type="button" data-tab="counter" class="on">Counter</button>
+      <button type="button" data-tab="tools">Tools</button>
+    </nav>
+
     <!-- Sign in, once per shift -->
     <section class="s-card s-login" id="v-login" hidden>
       <h1>Staff sign in</h1>
@@ -57,6 +62,46 @@
         <ul class="s-log" id="t-list"></ul>
       </div>
     </section>
+
+    <!-- Tools: prices, air clear, credits, attention, sales, this machine -->
+    <section id="v-tools" hidden>
+      <p class="s-note" id="x-busy" hidden></p>
+
+      <div class="s-card">
+        <div class="s-card-head"><h2>Prices</h2><span class="s-sum">per press</span></div>
+        <ul class="s-rows" id="x-prices"></ul>
+        <ul class="s-list s-hist" id="x-price-log"></ul>
+      </div>
+
+      <div class="s-card">
+        <div class="s-card-head"><h2>Air clear</h2><span class="s-sum" id="x-prime-sec"></span></div>
+        <p class="s-hint">After a gallon change, push the air out of the hose so the next customer is not charged for air.</p>
+        <div class="s-grid" id="x-primes"></div>
+      </div>
+
+      <div class="s-card">
+        <div class="s-card-head"><h2>Waiting credits</h2><span class="s-sum" id="x-credit-sum"></span></div>
+        <p class="s-hint">Paid for but never poured, last 7 days.</p>
+        <ul class="s-rows" id="x-credits"></ul>
+      </div>
+
+      <div class="s-card">
+        <div class="s-card-head"><h2>Needs attention</h2></div>
+        <p class="s-hint">Pours cut short today. The customer was charged in full — settle it with them.</p>
+        <ul class="s-list" id="x-attention"></ul>
+      </div>
+
+      <div class="s-card">
+        <div class="s-card-head"><h2>Today's sales</h2><span class="s-sum" id="x-sales-sum"></span></div>
+        <ul class="s-list" id="x-sales"></ul>
+        <ul class="s-list" id="x-cash"></ul>
+      </div>
+
+      <div class="s-card">
+        <div class="s-card-head"><h2>This machine</h2></div>
+        <dl class="s-dl" id="x-machine"></dl>
+      </div>
+    </section>
   </main>
 
   <!-- One confirm dialog, reused for paid and cancel -->
@@ -70,6 +115,8 @@
       </div>
     </div>
   </div>
+
+  <p class="s-toast" id="x-msg" role="status" hidden></p>
 
   <script src="/staff/staff.js"></script>
 </body>
