@@ -340,6 +340,7 @@ li.is-off .s-word { color: var(--ink-2); }
 .s-dl dd { margin: 0; text-align: right; font-weight: 700; word-break: break-all; }
 .s-dl .ok { color: var(--green); }
 .s-dl .bad { color: var(--red); }
+.s-dl .warn { color: var(--amber); }
 
 /* ---- narrower screens (1180 to 1359 px) ---- */
 @media (max-width: 1359px) {

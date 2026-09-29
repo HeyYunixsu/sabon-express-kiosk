@@ -36,6 +36,7 @@
   if (focus) view = 'overview';
   const range = { overview: 'today', transactions: 'today' };
   let week = null;              // the 7-day orders, from /staff/api/orders
+  let weekTotals = null;        // { orders, paid, cash } over the whole window, not just week
   let weekTimer = null;
   let weekGen = 0;
   let tools = null;
@@ -99,6 +100,13 @@
     else if (pin.length < 8) pin += key;
     renderLogin('');
   });
+
+  // Browsers only allow sound after a tap. A reload lands back on the
+  // dashboard already signed in (the session cookie), so the chime for the
+  // next new order needs its tap from anywhere on the page, not only Sign in.
+  document.addEventListener('pointerdown', () => {
+    try { audio = audio || new (window.AudioContext || window.webkitAudioContext)(); } catch (_) { /* no audio */ }
+  }, { once: true });
 
   $('l-go').addEventListener('click', async () => {
     if (busy || pin.length < 4) return;
@@ -195,8 +203,6 @@
 
   const hm = (d) => `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
   const dateOf = (d) => `${MONTHS[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
-  // YYYY-MM-DD, to match the "closed" field's date prefix, local time like the server.
-  const todayStr = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 
   function render() {
     if (!state) return;
@@ -237,6 +243,9 @@
     $('w-title').textContent = qr ? 'Waiting for QR payment (demo)' : 'Waiting for payment';
     $('w-paid').hidden = qr;
     if (o) {
+      // A red/amber tone from the idle side (offline, empty tank) must not
+      // stay on the hero once a real order is waiting to be paid.
+      delete card.dataset.tone;
       put('w-items', o.items.map((i) => `<li>
         <img src="${esc(i.img)}" alt=""><b>${esc(i.name)}</b><span class="q">× ${i.qty}</span><span class="p">${peso(i.price * i.qty)}</span>
       </li>`).join(''));
@@ -283,9 +292,10 @@
   }
 
   // Running total of the hourly values up to this hour, as a line and a
-  // faint area under it.
+  // faint area under it. The Pi's clock decides "this hour", not whatever
+  // device is looking at the dashboard.
   function spark(hourly) {
-    const upTo = new Date().getHours();
+    const upTo = state.hour;
     let sum = 0;
     const pts = (hourly || []).slice(0, upTo + 1).map((v) => (sum += v));
     const max = Math.max(1, ...pts);
@@ -310,7 +320,10 @@
   function renderKpis() {
     const { today: t, yesterday: y } = state.stats;
     const o = state.pending;
-    kpi('k-sales', peso(t.sales), delta(t.sales, y.sales), `${t.paid} ${t.paid === 1 ? 'order' : 'orders'}`, t.hourly.sales);
+    // The sales figure above is cash only (dayStats' isCash filter); the sub-line
+    // must count the same cash orders, not t.paid (every method, including qr).
+    const cashPaid = state.today.paid;
+    kpi('k-sales', peso(t.sales), delta(t.sales, y.sales), `${cashPaid} ${cashPaid === 1 ? 'order' : 'orders'}`, t.hourly.sales);
     kpi('k-paid', t.paid, delta(t.paid, y.paid), '', t.hourly.paid);
     kpi('k-pending', o ? 1 : 0, '', o ? `Order ${o.number}` : 'No pending', null);
     kpi('k-cancel', t.cancelled, delta(t.cancelled, y.cancelled, true), '', t.hourly.cancelled);
@@ -330,7 +343,7 @@
       ['pump', 'drop', 'Pump Status', `${s.pumpsReady}/${s.pumps} pumps ready`,
         !state.online ? ['off', '—'] : s.paused ? ['warn', 'Paused'] : s.pumpsReady < s.pumps ? ['warn', 'Check'] : ['ok', 'OK']],
       ['water', 'waves', 'Water Level', s.empty.length ? `Empty: ${esc(s.empty.join(', '))}` : 'Normal level',
-        s.empty.length ? ['bad', 'Empty'] : ['ok', 'Normal']],
+        !state.online ? ['off', '—'] : s.empty.length ? ['bad', 'Empty'] : ['ok', 'Normal']],
       ['sync', 'sync', 'Last Sync', `${queued}<br>${synced}`, s.uploadQueue ? ['warn', 'Waiting'] : ['ok', 'OK']],
     ];
   }
@@ -371,12 +384,6 @@
       </tr>`;
     }).join('') || `<tr class="is-none"><td colspan="5">${withDate ? 'No orders in the last 7 days.' : 'No orders yet today.'}</td></tr>`;
   }
-  // Cash only, as today's total counts it: a QR demo payment is pretend money.
-  function paidSum(rows) {
-    const paid = rows.filter((x) => x.status === 'paid' && x.method !== 'qr');
-    return `${paid.length} paid · ${peso(paid.reduce((a, x) => a + x.amount, 0))}`;
-  }
-
   function renderOrders() {
     if (!state) return;
     for (const [which, list, sum, limit] of [['overview', 't-list', 't-sum', 5], ['transactions', 'o-list', 'o-sum', 200]]) {
@@ -384,13 +391,17 @@
       for (const b of document.querySelectorAll(`.d-switch[data-for="${which}"] button`)) b.classList.toggle('on', b.dataset.range === range[which]);
       // Transactions' Today is every order today, from the same 7-day fetch
       // as the 7d switch -- state.today.orders is capped at 20 by the server.
+      // state.day, not the browser's date, picks out "today" from that list.
       const fromWeek = wk || which === 'transactions';
       if (fromWeek && !week) { put(list, '<tr class="is-none"><td colspan="5">Loading…</td></tr>'); continue; }
       const rows = wk ? week
-        : which === 'transactions' ? week.filter((o) => o.closed.startsWith(todayStr()))
+        : which === 'transactions' ? week.filter((o) => o.closed.startsWith(state.day))
         : state.today.orders;
       put(list, orderRows(rows.slice(0, limit), wk));
-      $(sum).textContent = wk ? `${paidSum(rows)} · last 7 days`
+      $(sum).textContent = wk
+        // From the server's totals, over the whole window -- the table (and
+        // so `rows`) is capped at 200, which a busy week can pass.
+        ? `${weekTotals.paid} paid · ${peso(weekTotals.cash)} · last 7 days`
         // Overview's footer agrees with the Paid Orders card, which counts
         // QR demo orders too; the cash total stays cash-only.
         : which === 'overview' ? `${state.stats.today.paid} paid · ${peso(state.today.total)} cash`
@@ -408,7 +419,7 @@
     if (view === 'overview' && range.overview !== '7d') return;
     const r = await api('/staff/api/orders');
     if (gen !== weekGen) return;
-    if (r.code === 200) { week = r.body.orders; renderOrders(); }
+    if (r.code === 200) { week = r.body.orders; weekTotals = r.body.totals; renderOrders(); }
     weekTimer = setTimeout(loadWeek, 10000);
   }
   document.addEventListener('click', (e) => {
@@ -620,6 +631,7 @@
     put('x-machine', `<dt>Machine ID</dt><dd>${esc(m.machineId || '—')}</dd>
       <dt>Controller</dt><dd class="${m.online ? 'ok' : 'bad'}">${m.online ? 'Online' : 'Offline'}</dd>
       <dt>Staff page</dt><dd>${esc(m.staffBase ? `${m.staffBase}/staff` : 'No network address')}</dd>
+      <dt>QR demo</dt><dd class="${state.qrDemo ? 'warn' : ''}">${state.qrDemo ? 'On — QR payments are pretend' : 'Off'}</dd>
       ${t.products.map((p) => {
         const st = stockOf(p.slot);
         return `<dt>${esc(p.name)}</dt><dd class="${!st ? '' : st.empty ? 'bad' : 'ok'}">${!st ? '—' : st.empty ? 'Empty' : 'Has stock'}</dd>`;
