@@ -99,7 +99,8 @@ The page uses the kiosk's black-and-blue style and works on phones and tablets.
 ## 3. Server rules
 
 **Lifecycle:** `waiting → paid | expired | cancelled`, with a reason
-(`customer`, `staff:<name>`, `out_of_stock`, `price_changed`).
+(`customer`, `staff` (the staff name goes in a separate `by` field),
+`out_of_stock`, `price_changed`, `timeout` (expiry)).
 
 - One waiting order per kiosk. A new order is refused while one waits, while
   any slot is armed, busy or queued, or within the post-ARM guard.
