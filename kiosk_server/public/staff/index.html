@@ -1,3 +1,76 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><title>Sabon Express · Staff</title></head>
-<body><p>Staff page — built in Task 6.</p></body></html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0B0E14">
+  <title>Sabon Express · Staff</title>
+  <link rel="stylesheet" href="/staff/staff.css">
+</head>
+<body>
+  <header class="s-top">
+    <img class="s-logo" src="/img/sabon-express-logo.png" alt="Sabon Express">
+    <span class="s-state" id="s-state"><i></i><b>—</b></span>
+    <span class="s-me" id="s-me" hidden></span>
+    <button class="s-btn s-ghost s-out" id="s-out" type="button" hidden>Sign out</button>
+  </header>
+
+  <main>
+    <!-- Sign in, once per shift -->
+    <section class="s-card s-login" id="v-login" hidden>
+      <h1>Staff sign in</h1>
+      <p>Enter your PIN</p>
+      <div class="s-dots" id="l-dots"></div>
+      <div class="s-msg" id="l-msg" role="alert"></div>
+      <div class="s-keypad" id="l-keypad">
+        <button data-k="1">1</button><button data-k="2">2</button><button data-k="3">3</button>
+        <button data-k="4">4</button><button data-k="5">5</button><button data-k="6">6</button>
+        <button data-k="7">7</button><button data-k="8">8</button><button data-k="9">9</button>
+        <button data-k="clear" class="k-alt">Clear</button><button data-k="0">0</button><button data-k="back" class="k-alt">⌫</button>
+      </div>
+      <button class="s-btn s-primary s-wide" id="l-go" type="button" disabled>Sign in</button>
+    </section>
+
+    <!-- Main: the waiting order and today -->
+    <section id="v-main" hidden>
+      <div class="s-card" id="w-card">
+        <div class="s-card-head">
+          <h2 id="w-title">Waiting for payment</h2>
+          <span class="s-num" id="w-num"></span>
+        </div>
+        <div id="w-body" hidden>
+          <ul class="s-items" id="w-items"></ul>
+          <div class="s-total"><span>Total</span><b id="w-total"></b></div>
+          <div class="s-timer" id="w-timer"></div>
+          <button class="s-btn s-primary s-wide s-big" id="w-paid" type="button">Mark as paid</button>
+          <button class="s-btn s-danger-ghost s-wide" id="w-cancel" type="button">Cancel order</button>
+        </div>
+        <p class="s-empty" id="w-empty">No order waiting.</p>
+        <p class="s-msg" id="w-msg" role="alert"></p>
+      </div>
+
+      <div class="s-card">
+        <div class="s-card-head">
+          <h2>Today</h2>
+          <span class="s-sum" id="t-sum"></span>
+        </div>
+        <ul class="s-log" id="t-list"></ul>
+      </div>
+    </section>
+  </main>
+
+  <!-- One confirm dialog, reused for paid and cancel -->
+  <div class="s-dialog" id="dlg" hidden>
+    <div class="s-card">
+      <h2 id="dlg-title"></h2>
+      <p id="dlg-text"></p>
+      <div class="s-row">
+        <button class="s-btn s-ghost" id="dlg-no" type="button">Back</button>
+        <button class="s-btn s-primary" id="dlg-yes" type="button">Yes</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/staff/staff.js"></script>
+</body>
+</html>
