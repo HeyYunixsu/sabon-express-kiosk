@@ -20,6 +20,8 @@
   let polling = false;
   let busy = false;
   let lastPending = null;
+  let seenFirstState = false;   // the first state after load sets the baseline, silently
+  let netDown = false;
   let focusNote = '';
   let dialogAction = null;
   let audio = null;
@@ -113,8 +115,15 @@
   async function poll() {
     const r = await api('/staff/api/state');
     if (r.code === 401) { polling = false; me = null; showView('login'); renderLogin(''); return; }
-    if (r.code === 200) { state = r.body; stateAt = Date.now(); render(); }
-    else if (r.code === 0) { $('w-msg').className = 's-msg'; $('w-msg').textContent = 'Cannot reach the kiosk. Check the Wi-Fi.'; }
+    if (r.code === 200) {
+      // Back in touch: take down the Wi-Fi warning, and only that.
+      if (netDown) { netDown = false; $('w-msg').textContent = ''; }
+      state = r.body; stateAt = Date.now(); render();
+    } else if (r.code === 0) {
+      netDown = true;
+      $('w-msg').className = 's-msg';
+      $('w-msg').textContent = 'Cannot reach the kiosk. Check the Wi-Fi.';
+    }
     setTimeout(poll, 1000);
   }
 
@@ -136,7 +145,8 @@
     st.querySelector('b').textContent = { ready: 'Kiosk ready', dispensing: 'Dispensing', offline: 'Kiosk offline' }[state.machine];
 
     const o = state.pending;
-    if (o && o.number !== lastPending) chime();
+    if (o && seenFirstState && o.number !== lastPending) chime();
+    seenFirstState = true;
     lastPending = o ? o.number : null;
 
     const card = $('w-card');
