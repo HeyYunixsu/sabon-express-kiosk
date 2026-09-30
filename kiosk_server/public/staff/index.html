@@ -124,9 +124,15 @@
         <div class="d-row">
           <div class="d-hero span-8" id="w-card">
             <div id="w-empty" class="h-idle">
-              <p class="h-kicker" id="h-kicker">TODAY'S PERFORMANCE</p>
+              <p class="h-kicker" id="h-kicker">KIOSK STATUS</p>
               <h1 id="h-title">Kiosk is Running Smoothly</h1>
               <p class="h-text" id="h-text"></p>
+              <!-- An empty tank: what to do, in order, and the way to the air clear. -->
+              <ol class="h-steps" id="h-steps" hidden>
+                <li><span><b>Refill</b> <span id="h-refill"></span></span></li>
+                <li><span><b>Run an air clear</b> <span id="h-clear"></span></span></li>
+              </ol>
+              <button type="button" class="s-btn s-primary h-go" id="h-go" data-go="health" data-scroll="c-prime" hidden>Go to Air clear<svg class="i"><use href="#i-arrow"/></svg></button>
               <p class="h-updated"><i></i><span id="h-updated"></span></p>
               <div class="h-art" aria-hidden="true">
                 <img src="/img/products/1.webp" alt=""><img src="/img/products/3.webp" alt=""><img src="/img/products/5.webp" alt="">
