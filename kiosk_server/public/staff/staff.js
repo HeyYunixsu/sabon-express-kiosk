@@ -198,13 +198,13 @@
     if (r.code !== 200) { focusNote = `Order ${number} is not known on this kiosk (it may be from another day).`; return; }
     const o = r.body.order;
     if (o.status === 'waiting') { focusNote = ''; return; }
-    const when = (o.closed || '').slice(11, 16);
+    const when = StaffTime.timeOf(o.closed);
     focusNote = o.status === 'paid' ? `Order ${o.number} was already paid (${o.by}, ${when}).`
       : o.status === 'expired' ? `Order ${o.number} expired — do not take payment. Ask the customer to order again.`
       : `Order ${o.number} was cancelled (${o.reason}${o.by ? `, ${o.by}` : ''}) — do not take payment.`;
   }
 
-  const hm = (d) => `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  const hm = (d) => StaffTime.clock12(d.getHours(), d.getMinutes());
   const dateOf = (d) => `${MONTHS[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
 
   function render() {
@@ -274,7 +274,7 @@
       $('h-title').textContent = title;
       $('h-text').textContent = text;
       const d = new Date(stateAt);
-      $('h-updated').textContent = `Last updated: ${dateOf(d)} ${hm(d)}:${String(d.getSeconds()).padStart(2, '0')}`;
+      $('h-updated').textContent = `Last updated: ${dateOf(d)} · ${StaffTime.clock12(d.getHours(), d.getMinutes(), d.getSeconds())}`;
     }
     if (focusNote && (!o || o.number !== focus)) {
       $('w-msg').className = 's-msg';
@@ -336,7 +336,7 @@
   // Each sub-line is HTML, every part from the server escaped.
   function statusRows() {
     const s = state.status;
-    const synced = s.lastSynced ? `Last confirmed ${esc(String(s.lastSynced).slice(11, 16))}` : 'None this month';
+    const synced = s.lastSynced ? `Last confirmed ${esc(StaffTime.timeOf(s.lastSynced))}` : 'None this month';
     const queued = s.uploadQueue ? `${s.uploadQueue} ${s.uploadQueue === 1 ? 'sale' : 'sales'} waiting to upload` : 'All sales uploaded';
     return [
       ['conn', 'wifi', 'Device Connection', state.online ? 'Controller connected' : 'Controller not answering',
@@ -375,7 +375,7 @@
       // A QR order cancelled by the customer still says "customer", not "QR demo".
       const who = x.reason === 'customer' ? 'customer' : x.by || (x.method === 'qr' ? 'QR demo' : '—');
       const c = String(x.closed || '');
-      const time = withDate && c ? `${MONTHS[Number(c.slice(5, 7)) - 1]} ${Number(c.slice(8, 10))} · ${c.slice(11, 16)}` : c.slice(11, 16);
+      const time = withDate ? StaffTime.dateTimeOf(c) : StaffTime.timeOf(c);
       const why = x.status === 'cancelled' && x.reason ? ` title="Cancelled: ${esc(x.reason)}"` : '';
       const reasonWord = REASON_WORDS[x.reason];
       const reasonLine = (x.status === 'cancelled' || x.status === 'expired') && reasonWord
@@ -490,8 +490,8 @@
 
   // ---- tools --------------------------------------------------------------------
   const nameOf = (slot) => (tools && tools.products[slot - 1] ? tools.products[slot - 1].name : `Slot ${slot}`);
-  const hhmm = (d) => String(d || '').slice(11, 16);
-  const when = (d) => String(d || '').slice(5, 16);
+  const hhmm = (d) => StaffTime.timeOf(d);
+  const when = (d) => StaffTime.dateTimeOf(d);
   const validPrice = (v) => /^\d+$/.test(String(v)) && Number(v) >= 1 && Number(v) <= 10000;
 
   const BUSY_MSG = {
