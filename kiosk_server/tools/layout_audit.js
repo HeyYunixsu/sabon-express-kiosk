@@ -82,7 +82,7 @@ function audit(wide) {
   const top = ['.d-kiosk', '#s-me', '#s-out'].map((s) => document.querySelector(s)).filter(vis);
   if (spread(top.map((e) => box(e).height)) > TOL) fail('I top bar heights', top.map((e) => `${label(e)}=${Math.round(box(e).height)}`).join(' '));
   if (spread(top.map((e) => box(e).top + box(e).height / 2)) > TOL) fail('I top bar centres', top.map(label).join(' '));
-  // J. The sidebar is one screen tall and stays put while the page scrolls.
+  // J. The sidebar is one screen tall (it is sticky, so it stays in view).
   const side = document.querySelector('.d-side');
   if (vis(side) && box(side).height > innerHeight - 47) fail('J sidebar height', `${Math.round(box(side).height)} > ${innerHeight - 48}`);
   // K. Every clock time says AM or PM (the payment countdown is a timer).
@@ -99,7 +99,7 @@ function audit(wide) {
   if (Math.abs(left - bar.left) > TOL || Math.abs(right - bar.right) > TOL) {
     fail('N section edges', `cards ${Math.round(left)}–${Math.round(right)}, top bar ${Math.round(bar.left)}–${Math.round(bar.right)}`);
   }
-  // O. At full width nothing in a table or status list is cut off.
+  // O. Nothing in a table or status list is cut off (checked at every width).
   if (wide) {
     for (const el of section.querySelectorAll('.d-table td, .d-status small, .d-status b')) {
       if (vis(el) && el.scrollWidth > el.clientWidth + 1) fail('O text cut off', el.textContent.trim().slice(0, 40));
@@ -158,7 +158,7 @@ async function main() {
       for (const v of SECTIONS) {
         await js(`document.querySelector('#s-nav [data-view="${v}"]').click()`);
         await sleep(v === 'overview' ? 1500 : 3500);   // the tools sections load /staff/api/tools
-        const fails = await js(`(${audit.toString()})(${w >= 1440})`);
+        const fails = await js(`(${audit.toString()})(true)`);
         const height = Math.max(h, await js('document.documentElement.scrollHeight'));
         const shot = await cdp('Page.captureScreenshot', {
           format: 'png', captureBeyondViewport: true, clip: { x: 0, y: 0, width: w, height, scale: 1 },
@@ -177,6 +177,8 @@ async function main() {
       }).catch(() => {});
     }
     chrome.kill();
+    await sleep(500);   // let Chrome let go of its profile before removing it
+    try { fs.rmSync(profile, { recursive: true, force: true }); } catch (_) { /* best effort */ }
   }
   console.log(`\n${problems ? `${problems} problem(s)` : 'every rule passes'} — screenshots in ${OUT}`);
   process.exit(problems ? 1 : 0);

@@ -337,7 +337,9 @@
   function statusRows() {
     const s = state.status;
     const queued = s.uploadQueue ? `${s.uploadQueue} waiting` : 'All uploaded';
-    const syncLine = s.lastSynced ? `${queued} · ${esc(StaffTime.timeOf(s.lastSynced))}` : queued;
+    // The last sale the cloud confirmed can be from an earlier day this month.
+    const lastSeen = s.lastSynced && (String(s.lastSynced).startsWith(state.day) ? StaffTime.timeOf(s.lastSynced) : StaffTime.dateTimeOf(s.lastSynced));
+    const syncLine = lastSeen ? `${queued} · ${esc(lastSeen)}` : `${queued} · none this month`;
     return [
       ['conn', 'wifi', 'Device Connection', state.online ? 'Controller connected' : 'Controller not answering',
         state.online ? ['ok', 'Online'] : ['bad', 'Offline']],
@@ -380,7 +382,7 @@
       return `<tr class="is-${esc(x.status)}">
         <td>${esc(x.number)}</td><td>${peso(x.amount)}</td>
         <td><span class="d-badge b-${esc(x.status)}"${why}><i>${icon(ic)}</i>${esc(label)}</span></td>
-        <td${!x.by && system ? ' class="d-reason"' : ''}>${esc(by)}</td><td>${esc(time)}</td>
+        <td${!x.by && system ? ' class="d-reason"' : ''} title="${esc(by)}">${esc(by)}</td><td>${esc(time)}</td>
       </tr>`;
     }).join('') || `<tr class="is-none"><td colspan="5">${withDate ? 'No orders in the last 7 days.' : 'No orders yet today.'}</td></tr>`;
   }

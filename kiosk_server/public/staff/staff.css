@@ -45,7 +45,7 @@ h1, h2, p { margin: 0; }
 /* ---- sign in ---- */
 .d-login { min-height: 100vh; display: grid; place-items: center; padding: 24px; }
 .l-card { width: 420px; text-align: center; padding: 30px; }
-.l-logo { height: 76px; }
+.l-logo { height: 76px; align-self: center; }   /* the card is a flex column; stretch would squash it */
 .l-card h1 { margin-top: 10px; font-size: 26px; }
 .l-card p { margin-top: 6px; color: var(--ink-2); }
 .s-dots { display: flex; justify-content: center; gap: 16px; margin: 18px 0 6px; height: 22px; }
@@ -320,7 +320,6 @@ li.is-off .s-word { color: var(--ink-2); }
 .s-list li.s-none { display: block; padding-top: 14px; }
 .s-hist li { grid-template-columns: minmax(0, 1fr) auto 140px; }
 .s-hist li > span:first-child { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.s-hist { margin-top: 14px; }
 .s-cash { margin-top: auto; padding-top: 10px; border-top: 1px solid var(--line); }
 .s-cash:empty { display: none; }
 .s-total { display: flex; align-items: baseline; gap: 12px; margin-bottom: 12px; }
