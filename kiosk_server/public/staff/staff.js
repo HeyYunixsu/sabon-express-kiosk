@@ -591,7 +591,7 @@
     }
     put('x-price-log', t.priceHistory.map((h) => `<li>
       <span>${esc(nameOf(h.slot))}</span><span>${peso(h.from)} → ${peso(h.to)}</span><span>${esc(when(h.date_created))}</span>
-    </li>`).join(''));
+    </li>`).join('') || '<li class="s-none">No price changes yet.</li>');
 
     $('x-prime-sec').textContent = `${t.primeSeconds} s each`;
     put('x-primes', t.products.map((p) => `<button class="s-tile" type="button" data-slot="${p.slot}"${t.primeBusy ? ' disabled' : ''}>
@@ -615,7 +615,8 @@
     </li>`).join('') || '<li class="s-none">Nothing today.</li>');
 
     const s = t.sales;
-    $('x-sales-sum').textContent = `${s.presses} presses · ${peso(s.amount)}`;
+    $('x-sales-total').textContent = peso(s.amount);
+    $('x-sales-sum').textContent = `${s.presses} ${s.presses === 1 ? 'press' : 'presses'} today`;
     put('x-sales', t.products.filter((p) => s.bySlot[p.slot]).map((p) => `<li>
       <span>${esc(p.name)} · ${s.bySlot[p.slot].presses} presses</span><span>${peso(s.bySlot[p.slot].amount)}</span>
     </li>`).join('') || '<li class="s-none">No sales yet today.</li>');
@@ -634,11 +635,11 @@
     put('x-machine', `<dt>Machine ID</dt><dd>${esc(m.machineId || '—')}</dd>
       <dt>Controller</dt><dd class="${m.online ? 'ok' : 'bad'}">${m.online ? 'Online' : 'Offline'}</dd>
       <dt>Staff page</dt><dd>${esc(m.staffBase ? `${m.staffBase}/staff` : 'No network address')}</dd>
-      <dt>QR demo</dt><dd class="${m.qrDemo ? 'warn' : ''}">${m.qrDemo ? 'On — QR payments are pretend' : 'Off'}</dd>
-      ${t.products.map((p) => {
-        const st = stockOf(p.slot);
-        return `<dt>${esc(p.name)}</dt><dd class="${!st ? '' : st.empty ? 'bad' : 'ok'}">${!st ? '—' : st.empty ? 'Empty' : 'Has stock'}</dd>`;
-      }).join('')}`);
+      <dt>QR demo</dt><dd class="${m.qrDemo ? 'warn' : ''}">${m.qrDemo ? 'On — QR payments are pretend' : 'Off'}</dd>`);
+    put('x-tanks', t.products.map((p) => {
+      const st = stockOf(p.slot);
+      return `<dt>${esc(p.name)}</dt><dd class="${!st ? '' : st.empty ? 'bad' : 'ok'}">${!st ? '—' : st.empty ? 'Empty' : 'Has stock'}</dd>`;
+    }).join(''));
   }
 
   $('x-prices').addEventListener('input', (e) => {
