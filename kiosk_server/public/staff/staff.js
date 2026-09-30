@@ -83,6 +83,7 @@
     el.querySelector('small').textContent = sub;
     let timer = null;
     const handle = {
+      sticky,
       close() {
         const i = notices.indexOf(handle);
         if (i < 0) return;
@@ -106,7 +107,8 @@
     el.style.marginBottom = '';
     el.classList.add('is-in');
     notices.unshift(handle);
-    while (notices.length > 3) notices[notices.length - 1].close();
+    // A 4th pushes out the oldest one that is not sticky (the Wi-Fi one stays).
+    while (notices.length > 3) (notices.filter((n) => !n.sticky).pop() || notices[notices.length - 1]).close();
     if (!sticky) timer = setTimeout(handle.close, N_LIFE[kind]);
     return handle;
   }
@@ -116,7 +118,12 @@
     $('v-login').hidden = v !== 'login';
     $('app').hidden = v !== 'main';
     if (v === 'main') showView(view);
-    else { clearTimeout(toolsTimer); clearTimeout(weekTimer); }
+    else {
+      clearTimeout(toolsTimer); clearTimeout(weekTimer);
+      // Signed out (by hand or a 401): nothing from the last session stays up.
+      for (const n of [...notices]) n.close();
+      netDown = false; netNote = null;
+    }
   }
 
   // A short two-note chime for a new order. Browsers only allow sound after a
@@ -229,6 +236,9 @@
 
   async function poll() {
     const r = await api('/staff/api/state');
+    // Signed out meanwhile (Sign out while the Wi-Fi is down never reaches
+    // the kiosk, so no 401 would come): stop here.
+    if (!me) { polling = false; return; }
     if (r.code === 401) { polling = false; me = null; showScreen('login'); renderLogin(''); return; }
     if (r.code === 200) {
       // Back in touch: take down the Wi-Fi notification.
@@ -507,7 +517,8 @@
     $('dlg').classList.remove('is-out');
     $('dlg').hidden = false;
   }
-  // Fades out, then hidden. is-out stops it taking taps while it fades.
+  // Fades out, then hidden. While it fades, is-out stops its buttons taking
+  // taps and the backdrop swallows them, so nothing underneath is hit.
   function closeDialog() {
     const d = $('dlg');
     d.classList.add('is-out');
