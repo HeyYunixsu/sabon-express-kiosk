@@ -164,7 +164,7 @@
     if (endedAt && now - endedAt > ENDED_MS) { endedAt = 0; show('attract'); return; }
     if (screen !== 'dispense') return;
     if (sawCredit) {
-      // Everything poured: Done / Finish is live. If nobody taps it, finish
+      // Everything poured: Done is live. If nobody taps it, finish
       // anyway so the next customer is not left looking at this order.
       doneSince = doneSince || now;
       if (now - doneSince > DONE_AUTO_MS) show('thanks');
