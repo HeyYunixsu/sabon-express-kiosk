@@ -14,6 +14,7 @@
   --brand-text: #7B9BF5;                          /* the same blue, light enough to read as text on slate */
   --green: #34D399; --amber: #FBBF24; --red: #F87171;
   --r: 16px; --gap: 24px; --pad: 24px;
+  --ease: cubic-bezier(.2,.8,.2,1);
   font-family: 'Helvetica Neue LT', system-ui, sans-serif;
 }
 * { box-sizing: border-box; }
@@ -69,7 +70,8 @@ h1, h2, p { margin: 0; }
 .d-nav button .i { width: 26px; height: 26px; color: var(--ink-2); }
 .d-nav button:hover { background: var(--surface-sub); }
 .d-nav button.on { color: var(--brand-text); font-weight: 700; }
-.d-nav button.on::before { content: ''; position: absolute; left: 0; top: 12px; bottom: 12px; width: 3px; border-radius: 3px; background: var(--brand); }
+.d-nav button::before { content: ''; position: absolute; left: 0; top: 12px; bottom: 12px; width: 3px; border-radius: 3px; background: var(--brand); opacity: 0; transform: scaleY(.4); transition: opacity .2s ease, transform .2s var(--ease); }
+.d-nav button.on::before { opacity: 1; transform: none; }
 .d-nav button.on .i { color: var(--brand-text); }
 .nav-dot { margin-left: auto; width: 10px; height: 10px; border-radius: 50%; flex: none; background: var(--brand); animation: nav-dot-pulse 1.6s ease-in-out infinite; }
 @keyframes nav-dot-pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: .55; transform: scale(1.35); } }
@@ -153,7 +155,6 @@ h1, h2, p { margin: 0; }
 
 .s-msg { min-height: 0; margin-top: 12px; font-weight: 700; color: var(--red); position: relative; }
 .s-msg:empty { display: none; }
-.s-msg.is-ok { color: var(--green); }
 .d-hero:not(.is-live) #w-msg { max-width: calc(100% - 270px); }
 #l-msg { min-height: 22px; margin-top: 10px; }
 #l-msg:empty { display: block; }
@@ -369,10 +370,65 @@ li.is-off .s-word { color: var(--ink-2); }
   .d-row > .span-4 { grid-column: span 5; }
 }
 
-/* ---- dialog and toast ---- */
-.s-dialog { position: fixed; inset: 0; display: grid; place-items: center; padding: 16px; background: rgba(5,8,14,.7); z-index: 10; }
-.s-dialog .d-card { width: 100%; max-width: 440px; text-align: center; padding: 28px; border-color: var(--line-2); box-shadow: 0 16px 40px rgba(0,0,0,.45); }
+/* ---- dialog: the backdrop fades, the card grows from .96; is-out reverses
+   both before staff.js hides it ---- */
+.s-dialog { position: fixed; inset: 0; display: grid; place-items: center; padding: 16px; background: rgba(5,8,14,.7); z-index: 10; animation: fade-in .2s ease; transition: opacity .18s ease; }
+.s-dialog .d-card { width: 100%; max-width: 440px; text-align: center; padding: 28px; border-color: var(--line-2); box-shadow: 0 16px 40px rgba(0,0,0,.45); animation: pop-in .2s var(--ease); transition: transform .18s ease; }
+.s-dialog.is-out { opacity: 0; }
+.s-dialog.is-out .d-card { transform: scale(.96); pointer-events: none; }
 .s-dialog h2 { font-size: 24px; }
 .s-dialog p { margin-top: 10px; color: var(--ink-2); }
-.s-toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); width: calc(100% - 32px); max-width: 560px; margin: 0; padding: 16px 18px; border-radius: 14px; background: var(--surface); border: 1px solid var(--red); color: var(--red); font-weight: 700; z-index: 5; }
-.s-toast.is-ok { border-color: var(--green); color: var(--green); }
+
+/* ---- notifications: the cashier V2 notice, top right, in slate. Colour
+   only in the icon circle and the strip down the left edge. Fixed, so it
+   never moves the page; under the dialog, and below the top bar so Sign out
+   stays reachable. ---- */
+.n-stack { position: fixed; top: 108px; right: 24px; z-index: 9; width: min(420px, calc(100vw - 48px)); pointer-events: none; }
+.n-card {
+  position: relative; display: flex; align-items: flex-start; gap: 14px; margin-bottom: 12px;
+  padding: 16px 10px 16px 16px; border-radius: 14px; pointer-events: auto;
+  background: var(--surface-sub); border: 1px solid var(--line-2); border-left: 4px solid var(--green);
+  box-shadow: 0 16px 40px rgba(0,0,0,.5);
+  opacity: 0; transform: translateY(-10px);
+  transition: opacity .22s ease, transform .22s var(--ease), margin-bottom .22s var(--ease), border-color .15s ease;
+}
+.n-card.is-in { opacity: 1; transform: none; }
+.n-card.is-out { pointer-events: none; }
+.n-card.is-bad { border-left-color: var(--red); }
+.n-card.is-warn { border-left-color: var(--amber); }
+.n-card.is-info { border-left-color: var(--brand); }
+.n-card.is-action { cursor: pointer; }
+.n-card.is-action:hover { border-top-color: var(--brand); border-right-color: var(--brand); border-bottom-color: var(--brand); }
+.n-ico { flex: none; width: 30px; height: 30px; margin-top: 2px; border-radius: 50%; display: grid; place-items: center; background: var(--green); color: var(--bg); }
+.n-ico .i { width: 17px; height: 17px; stroke-width: 3; }
+.is-bad .n-ico { background: var(--red); }
+.is-warn .n-ico { background: var(--amber); }
+.is-info .n-ico { background: var(--brand); color: #fff; }
+.n-body { flex: 1 1 auto; min-width: 0; padding-top: 5px; }
+.n-body b { display: block; font-size: 16px; line-height: 21px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.n-body small { display: block; margin-top: 3px; font-size: 14px; line-height: 19px; color: var(--ink-2); }
+.n-body small:empty { display: none; }
+.n-x { flex: none; width: 44px; height: 44px; margin: -5px 0 -8px; border-radius: 50%; display: grid; place-items: center; color: var(--ink-2); }
+.n-x:hover { background: var(--line); color: var(--ink); }
+.n-x .i { width: 18px; height: 18px; }
+
+/* ---- motion: 150-250 ms, never on the poll itself ---- */
+/* The section being shown rises in; display:none -> grid restarts it. */
+.d-main > section { animation: rise-in .2s var(--ease); }
+/* The hero's incoming side (idle or waiting) fades in the same way. */
+#w-empty, #w-body { animation: fade-in .2s ease; }
+/* A stat value that changed (staff.js replays is-new). */
+.k-val.is-new { animation: fade-in .25s ease; }
+.s-btn, .d-nav button, .q-tile, .s-tile, .d-switch button, .d-link, .d-pill, .d-banner, .s-keypad button, .q-chev {
+  transition: background-color .15s ease, border-color .15s ease, color .15s ease, box-shadow .15s ease, transform .15s ease;
+}
+.d-nav button .i { transition: color .15s ease; }
+.d-table td { transition: background-color .15s ease; }
+.s-btn:not(:disabled):active, .s-tile:not(:disabled):active, .q-tile:active, .s-keypad button:active,
+.d-switch button:active, .d-banner:not(:disabled):active, .d-pill:active { transform: scale(.98); }
+@keyframes fade-in { from { opacity: 0; } }
+@keyframes rise-in { from { opacity: 0; transform: translateY(8px); } }
+@keyframes pop-in { from { opacity: 0; transform: scale(.96); } }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+}

@@ -42,7 +42,8 @@
   let tools = null;
   let toolsTimer = null;
   let toolsGen = 0;
-  let toastTimer = null;
+  let netNote = null;           // the sticky Wi-Fi notification, while the poll fails
+  let dlgTimer = null;
   const lastHtml = {};
 
   async function api(path, body) {
@@ -57,12 +58,72 @@
     }
   }
 
+  // Replay a CSS entrance on an element (the class names one in staff.css).
+  function replay(el, cls) {
+    el.classList.remove(cls);
+    void el.offsetWidth;
+    el.classList.add(cls);
+  }
+
+  // ---- notifications ------------------------------------------------------------
+  // The cashier V2 notice, as a stack top right: newest on top, three at most.
+  // ok/info leave after 5 s, bad/warn after 8 s, sticky ones when code or the
+  // x closes them. Returns { close() }.
+  const N_ICON = { ok: 'check', bad: 'x', warn: 'bang', info: 'dot' };
+  const N_LIFE = { ok: 5000, info: 5000, bad: 8000, warn: 8000 };
+  const notices = [];           // open ones, newest first
+  function notify({ kind = 'ok', title, sub = '', sticky = false, onClick = null }) {
+    const el = document.createElement('div');
+    el.className = `n-card is-${kind}${onClick ? ' is-action' : ''}`;
+    el.innerHTML = `<span class="n-ico">${icon(N_ICON[kind])}</span>
+      <div class="n-body"><b></b><small></small></div>
+      <button class="n-x" type="button" aria-label="Dismiss">${icon('x')}</button>`;
+    el.querySelector('b').textContent = title;
+    el.querySelector('b').title = title;
+    el.querySelector('small').textContent = sub;
+    let timer = null;
+    const handle = {
+      sticky,
+      close() {
+        const i = notices.indexOf(handle);
+        if (i < 0) return;
+        notices.splice(i, 1);
+        clearTimeout(timer);
+        // Give back its room as it fades, so the ones below slide up.
+        el.style.marginBottom = `${-el.offsetHeight}px`;
+        el.classList.remove('is-in');
+        el.classList.add('is-out');
+        setTimeout(() => el.remove(), 240);
+      },
+    };
+    el.addEventListener('click', (e) => {
+      if (e.target.closest('.n-x')) handle.close();
+      else if (onClick) { handle.close(); onClick(); }
+    });
+    // Enter taking no room, then grow into it: the others slide down.
+    $('x-msg').prepend(el);
+    el.style.marginBottom = `${-el.offsetHeight}px`;
+    void el.offsetWidth;
+    el.style.marginBottom = '';
+    el.classList.add('is-in');
+    notices.unshift(handle);
+    // A 4th pushes out the oldest one that is not sticky (the Wi-Fi one stays).
+    while (notices.length > 3) (notices.filter((n) => !n.sticky).pop() || notices[notices.length - 1]).close();
+    if (!sticky) timer = setTimeout(handle.close, N_LIFE[kind]);
+    return handle;
+  }
+
   // Signed out: the sign-in card. Signed in: the dashboard.
   function showScreen(v) {
     $('v-login').hidden = v !== 'login';
     $('app').hidden = v !== 'main';
     if (v === 'main') showView(view);
-    else { clearTimeout(toolsTimer); clearTimeout(weekTimer); }
+    else {
+      clearTimeout(toolsTimer); clearTimeout(weekTimer);
+      // Signed out (by hand or a 401): nothing from the last session stays up.
+      for (const n of [...notices]) n.close();
+      netDown = false; netNote = null;
+    }
   }
 
   // A short two-note chime for a new order. Browsers only allow sound after a
@@ -139,6 +200,8 @@
   // tools every 3 s while open.
   function showView(name) {
     view = VIEWS.includes(name) ? name : 'overview';
+    // The section shown rises in: a CSS animation that display:none -> grid
+    // restarts, so re-showing the open section does nothing.
     for (const v of VIEWS) $(`v-${v}`).hidden = v !== view;
     for (const b of document.querySelectorAll('#s-nav button')) b.classList.toggle('on', b.dataset.view === view);
     try { sessionStorage.setItem('staff-view', view); } catch (_) { /* no storage */ }
@@ -173,15 +236,18 @@
 
   async function poll() {
     const r = await api('/staff/api/state');
+    // Signed out meanwhile (Sign out while the Wi-Fi is down never reaches
+    // the kiosk, so no 401 would come): stop here.
+    if (!me) { polling = false; return; }
     if (r.code === 401) { polling = false; me = null; showScreen('login'); renderLogin(''); return; }
     if (r.code === 200) {
-      // Back in touch: take down the Wi-Fi warning, and only that.
-      if (netDown) { netDown = false; $('w-msg').textContent = ''; }
+      // Back in touch: take down the Wi-Fi notification.
+      if (netDown) { netDown = false; netNote.close(); netNote = null; }
       state = r.body; stateAt = Date.now(); render();
     } else if (r.code === 0) {
+      // One sticky notification for the whole drop, not one per failed poll.
+      if (!netDown) netNote = notify({ kind: 'bad', title: 'Cannot reach the kiosk', sub: 'Check the Wi-Fi.', sticky: true });
       netDown = true;
-      $('w-msg').className = 's-msg';
-      $('w-msg').textContent = 'Cannot reach the kiosk. Check the Wi-Fi.';
       // "System Online" must not stay green during a drop; the next good
       // poll calls render(), which puts both back from state.
       $('s-sys').classList.add('is-off');
@@ -230,7 +296,14 @@
 
   function renderHero() {
     const o = state.pending;
-    if (o && seenFirstState && o.number !== lastPending) chime();
+    if (o && seenFirstState && o.number !== lastPending) {
+      chime();
+      notify({
+        kind: 'info', title: `New order ${o.number} · ${peso(o.amount)}`,
+        sub: o.method === 'qr' ? 'Waiting for QR payment' : 'Waiting for payment',
+        onClick: () => { showView('overview'); window.scrollTo({ top: 0, behavior: 'smooth' }); },
+      });
+    }
     seenFirstState = true;
     lastPending = o ? o.number : null;
 
@@ -310,7 +383,8 @@
 
   function kpi(id, value, deltaHtml, sub, hourly) {
     const c = $(id);
-    c.querySelector('.k-val').textContent = value;
+    const v = c.querySelector('.k-val');
+    if (v.textContent !== String(value)) { v.textContent = value; replay(v, 'is-new'); }
     c.querySelector('.k-delta').innerHTML = deltaHtml;
     c.querySelector('.k-delta').hidden = !deltaHtml;
     c.querySelector('.k-sub').textContent = sub;
@@ -439,11 +513,21 @@
     $('dlg-text').textContent = text;
     $('dlg-yes').textContent = yesLabel;
     dialogAction = action;
+    clearTimeout(dlgTimer);
+    $('dlg').classList.remove('is-out');
     $('dlg').hidden = false;
   }
-  $('dlg-no').addEventListener('click', () => { $('dlg').hidden = true; dialogAction = null; });
+  // Fades out, then hidden. While it fades, is-out stops its buttons taking
+  // taps and the backdrop swallows them, so nothing underneath is hit.
+  function closeDialog() {
+    const d = $('dlg');
+    d.classList.add('is-out');
+    clearTimeout(dlgTimer);
+    dlgTimer = setTimeout(() => { d.hidden = true; d.classList.remove('is-out'); }, 180);
+  }
+  $('dlg-no').addEventListener('click', () => { closeDialog(); dialogAction = null; });
   $('dlg-yes').addEventListener('click', async () => {
-    $('dlg').hidden = true;
+    closeDialog();
     const act = dialogAction;
     dialogAction = null;
     if (act) await act();
@@ -466,10 +550,10 @@
       busy = true; render();
       const r = await api('/staff/api/orders/paid', { number: o.number });
       busy = false;
-      const msg = $('w-msg');
-      if (r.code === 200) { msg.className = 's-msg is-ok'; msg.textContent = `${o.number} paid. The kiosk is unlocked.`; }
-      else { msg.className = 's-msg'; msg.textContent = PAID_MSG[r.body.error] || 'That did not work — try again.'; }
+      if (r.code === 200) notify({ kind: 'ok', title: `${o.number} paid`, sub: 'The kiosk is unlocked.' });
+      else notify({ kind: 'bad', title: `${o.number} not marked paid`, sub: PAID_MSG[r.body.error] || 'That did not work — try again.' });
       focus = null; focusNote = '';
+      $('w-msg').textContent = '';
       render();
     });
   });
@@ -481,9 +565,8 @@
       busy = true; render();
       const r = await api('/staff/api/orders/cancel', { number: o.number });
       busy = false;
-      const msg = $('w-msg');
-      msg.className = r.code === 200 ? 's-msg is-ok' : 's-msg';
-      msg.textContent = r.code === 200 ? `${o.number} cancelled.` : (PAID_MSG[r.body.error] || 'That did not work — try again.');
+      if (r.code === 200) notify({ kind: 'ok', title: `${o.number} cancelled` });
+      else notify({ kind: 'bad', title: `${o.number} not cancelled`, sub: PAID_MSG[r.body.error] || 'That did not work — try again.' });
       render();
     });
   });
@@ -522,13 +605,9 @@
     $(id).innerHTML = html;
   }
 
-  function toast(ok, text) {
-    const t = $('x-msg');
-    t.className = ok ? 's-toast is-ok' : 's-toast';
-    t.textContent = text;
-    t.hidden = false;
-    clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => { t.hidden = true; }, 6000);
+  // A tool's result: a short title, the full message under it.
+  function toast(ok, text, title) {
+    notify({ kind: ok ? 'ok' : 'bad', title: title || (ok ? 'Done' : 'That did not work'), sub: text });
   }
   const failed = (r) => TOOL_MSG[r.body.error || r.body.result] || 'That did not work — try again.';
 
@@ -658,9 +737,9 @@
     ask(`Change ${nameOf(slot)} to ${peso(price)}?`, `It is ${peso(from)} now. New orders use the new price.`, 'Yes, change it', async () => {
       const r = await api('/staff/api/price', { slot, price });
       delete input.dataset.dirty;
-      if (r.code !== 200) toast(false, failed(r));
-      else if (r.body.result === 'not_saved') toast(false, `${nameOf(slot)} is ${peso(price)} now, but it could not be saved — it goes back after a restart.`);
-      else toast(true, `${nameOf(slot)} is now ${peso(price)}.`);
+      if (r.code !== 200) toast(false, failed(r), 'Price not changed');
+      else if (r.body.result === 'not_saved') toast(false, `${nameOf(slot)} is ${peso(price)} now, but it could not be saved — it goes back after a restart.`, 'Price not saved');
+      else toast(true, `${nameOf(slot)} is now ${peso(price)}.`, 'Price saved');
       loadTools();
     });
   });
@@ -672,7 +751,8 @@
     ask(`Put a cup under nozzle ${slot}`, `${nameOf(slot)}. Run it for ${tools.primeSeconds} seconds?`, 'Yes, run it', async () => {
       const r = await api('/staff/api/prime', { slot, confirm: true });
       toast(r.code === 200, r.code === 200 ? `Nozzle ${slot} is clearing air for ${tools.primeSeconds} seconds.`
-        : r.body.error === 'machine_busy' ? 'A nozzle is pouring — wait for it to stop.' : failed(r));
+        : r.body.error === 'machine_busy' ? 'A nozzle is pouring — wait for it to stop.' : failed(r),
+      r.code === 200 ? `Clearing air · nozzle ${slot}` : 'Air clear not started');
       loadTools();
     });
   });
@@ -686,13 +766,13 @@
     if (b.dataset.act === 'give') {
       ask(`Give back ${what}?`, 'The kiosk opens the dispense screen for these presses. The customer pours them there.', 'Yes, give back', async () => {
         const r = await api('/staff/api/credits/give-back', { id: c.id });
-        toast(r.code === 200, r.code === 200 ? `${what} is ready on the kiosk.` : failed(r));
+        toast(r.code === 200, r.code === 200 ? `${what} is ready on the kiosk.` : failed(r), r.code === 200 ? 'Given back' : 'Not given back');
         loadTools();
       });
     } else {
       ask(`Write off ${what}?`, `The ${peso(c.amount)} stays paid and the presses are not given. This cannot be undone.`, 'Yes, write off', async () => {
         const r = await api('/staff/api/credits/write-off', { id: c.id });
-        toast(r.code === 200, r.code === 200 ? `${what} written off.` : failed(r));
+        toast(r.code === 200, r.code === 200 ? `${what} written off.` : failed(r), r.code === 200 ? 'Written off' : 'Not written off');
         loadTools();
       });
     }
