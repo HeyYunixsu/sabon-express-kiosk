@@ -61,7 +61,7 @@ controller and the uploader read them relative to their own folders.
 | Key | Example | Description |
 |-----|---------|-------------|
 | `STAFF1_NAME`-`STAFF6_NAME` | `Ana` | Who a PIN belongs to. Written into every cash payment they confirm |
-| `STAFF1_PIN_HASH`-`STAFF6_PIN_HASH` | `scrypt$…$…` | Salted scrypt hash of that person's 4-8 digit PIN. Make one with `node kiosk_server/tools/hash_pin.js <PIN>` |
+| `STAFF1_PIN_HASH`-`STAFF6_PIN_HASH` | `scrypt$…$…` | Salted scrypt hash of that person's 4-digit PIN. Make one with `node kiosk_server/tools/hash_pin.js <PIN>` |
 
 A PIN identifies a person, so every cash sale in `logs/payments.jsonl` names
 who took the money. Only the hash is stored: `config.env` lives on the same SD

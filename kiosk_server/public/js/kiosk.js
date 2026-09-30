@@ -448,8 +448,7 @@
     $('pin-summary').innerHTML = cartRows(items);
     $('pin-amount').textContent = $('pin-total').textContent = peso(amount);
     $('pin-items').textContent = items.reduce((a, it) => a + it.qty, 0);
-    const slots = Math.max(4, pin.length);
-    $('pin-dots').innerHTML = Array.from({ length: slots }, (_, i) =>
+    $('pin-dots').innerHTML = Array.from({ length: 4 }, (_, i) =>
       `<i class="${i < pin.length ? 'on' : ''}"></i>`).join('');
     $('confirm-cash').disabled = pin.length < 4 || sending || !machineReady() || !o;
     $('confirm-label').textContent = sending ? 'Checking…' : 'Confirm & Unlock';
@@ -461,7 +460,7 @@
     const key = k.dataset.k;
     if (key === 'clear') pin = '';
     else if (key === 'back') pin = pin.slice(0, -1);
-    else if (pin.length < 8) pin += key;
+    else if (pin.length < 4) pin += key;   // a staff PIN is 4 digits
     setPinMsg('');
     renderPin();
   });

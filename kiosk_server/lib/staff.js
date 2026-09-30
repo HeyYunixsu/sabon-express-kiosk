@@ -64,7 +64,7 @@ function createPinPad(staff, { now = Date.now, onLock = () => {} } = {}) {
       const t = now();
       if (t < lockedUntil) return { ok: false, reason: 'locked', retryInMs: lockedUntil - t };
       if (staff.length === 0) return { ok: false, reason: 'no_staff' };
-      if (!/^\d{4,8}$/.test(String(pin))) return recordWrong(t);
+      if (!/^\d{4}$/.test(String(pin))) return recordWrong(t);
 
       const who = staff.find((s) => pinMatches(pin, s.hash));
       if (!who) return recordWrong(t);

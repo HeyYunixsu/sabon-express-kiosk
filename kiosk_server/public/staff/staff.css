@@ -76,11 +76,8 @@ h1, h2, p { margin: 0; }
 .nav-dot { margin-left: auto; width: 10px; height: 10px; border-radius: 50%; flex: none; background: var(--brand); animation: nav-dot-pulse 1.6s ease-in-out infinite; }
 @keyframes nav-dot-pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: .55; transform: scale(1.35); } }
 .d-sys { margin-top: auto; padding: 16px; border-radius: 14px; border: 1px solid var(--line); background: var(--surface-sub); }
-.d-sys b { display: flex; align-items: center; gap: 10px; font-size: 15px; }
-.d-sys b i { width: 8px; height: 8px; border-radius: 50%; background: var(--green); }
-.d-sys.is-off b { color: var(--red); }
-.d-sys.is-off b i { background: var(--red); }
-.d-sys small { display: block; margin-top: 8px; color: var(--ink-2); font-size: 13px; font-variant-numeric: tabular-nums; }
+.d-sys b { display: block; font-size: 22px; font-variant-numeric: tabular-nums; }
+.d-sys small { display: block; margin-top: 4px; color: var(--ink-2); font-size: 13px; font-variant-numeric: tabular-nums; }
 
 .d-main { display: grid; gap: 24px; min-width: 0; }
 .d-main > section { display: grid; grid-template-columns: minmax(0, 1fr); gap: 24px; }
@@ -95,7 +92,12 @@ h1, h2, p { margin: 0; }
 #k-loc { display: flex; align-items: center; gap: 6px; margin-top: 6px; color: var(--ink-2); font-size: 14px; }
 #k-loc .i { width: 16px; height: 16px; }
 .d-chip { display: inline-flex; align-items: center; gap: 8px; padding: 5px 12px; border-radius: 999px; font-size: 14px; border: 1px solid var(--line); }
-.d-chip i { width: 8px; height: 8px; border-radius: 50%; background: var(--ink-2); }
+/* Status icons: one look everywhere (chip, Kiosk Status, badges; the
+   notifications and the hero are bigger): a circle in the tone's colour with
+   the glyph cut out -- check ok, ! check it, x problem, dot unknown. */
+.d-chip i, .s-word i, .d-badge i { width: 18px; height: 18px; flex: none; border-radius: 50%; display: grid; place-items: center; background: var(--ink-2); color: var(--bg); }
+.d-chip i .i, .s-word i .i, .d-badge i .i { display: block; width: 12px; height: 12px; stroke-width: 3.2; }
+.d-chip i { background: var(--ink-2); }
 .d-chip.is-ready i { background: var(--green); }
 .d-chip.is-dispensing i { background: var(--amber); }
 .d-chip.is-offline { color: var(--red); border-color: rgba(248,113,113,.45); }
@@ -121,7 +123,11 @@ h1, h2, p { margin: 0; }
    foot, the bottles bottom-right -- never text floating in empty space. */
 .h-idle { max-width: calc(100% - 270px); flex: 1 1 auto; display: flex; flex-direction: column; }
 .h-kicker { font-size: 14px; letter-spacing: .06em; color: var(--ink-2); }
-#h-title { margin-top: 8px; font-size: 32px; line-height: 1.15; color: var(--ink); }
+.h-head { display: flex; align-items: center; gap: 14px; margin-top: 10px; }
+.h-ico { flex: none; width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; background: var(--green); color: var(--bg); }
+.h-ico .i { width: 22px; height: 22px; stroke-width: 3; }
+.d-hero[data-tone="warn"] .h-ico, .d-hero[data-tone="bad"] .h-ico { background: var(--red); }
+#h-title { font-size: 32px; line-height: 1.15; color: var(--ink); }
 .d-hero[data-tone="bad"] #h-title { color: var(--red); }
 .h-text { margin-top: 12px; font-size: 17px; color: var(--ink); }
 .d-hero[data-tone] .h-kicker { color: var(--red); font-weight: 600; }
@@ -213,8 +219,6 @@ h1, h2, p { margin: 0; }
 .d-table tr.is-none td { color: var(--ink-2); font-weight: 400; }
 /* A badge is a dot and a word. staff.js puts an icon in the dot; it is not shown. */
 .d-badge { display: inline-flex; align-items: center; gap: 8px; height: 30px; padding: 0 12px; border-radius: 999px; font-size: 14px; border: 1px solid var(--line); color: var(--ink-2); }
-.d-badge i { width: 8px; height: 8px; border-radius: 50%; background: var(--ink-2); }
-.d-badge .i { display: none; }
 .b-paid, .b-ok { color: var(--green); border-color: rgba(52,211,153,.3); }
 .b-paid i, .b-ok i { background: var(--green); }
 .b-cancelled, .b-bad { color: var(--red); border-color: rgba(248,113,113,.35); }
@@ -238,11 +242,13 @@ h1, h2, p { margin: 0; }
 .d-status b { font-size: 15px; }
 .d-status small { margin-top: 2px; font-size: 13px; line-height: 18px; color: var(--ink-2); }
 .s-word { justify-self: start; display: inline-flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 700; }
-.s-word i { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
 li.is-ok .s-word { color: var(--green); }
 li.is-warn .s-word { color: var(--amber); }
 li.is-bad .s-word { color: var(--red); }
 li.is-off .s-word { color: var(--ink-2); }
+li.is-ok .s-word i { background: var(--green); }
+li.is-warn .s-word i { background: var(--amber); }
+li.is-bad .s-word i { background: var(--red); }
 
 /* quick actions: four equal slate tiles */
 .d-quick { display: grid; gap: 8px; }
@@ -367,10 +373,12 @@ li.is-off .s-word { color: var(--ink-2); }
   .d-table td:nth-child(5) { font-size: 13px; }
   .d-table th:nth-child(1), .d-table td:nth-child(1) { width: 12.7%; }
   .d-table th:nth-child(2), .d-table td:nth-child(2) { width: 15%; padding-right: 12px; }
-  .d-table th:nth-child(3), .d-table td:nth-child(3) { width: 18.8%; padding-right: 2px; }
-  .d-table th:nth-child(4), .d-table td:nth-child(4) { width: 25%; }
+  .d-table th:nth-child(3), .d-table td:nth-child(3) { width: 21.8%; padding-right: 2px; }
+  .d-table th:nth-child(4), .d-table td:nth-child(4) { width: 22%; }
   .d-table th:nth-child(5), .d-table td:nth-child(5) { width: 28.5%; padding-right: 12px; }
   .d-table .d-badge { height: auto; padding: 0; border: 0; gap: 6px; font-size: 13px; }
+  .d-table .d-badge i { width: 14px; height: 14px; }
+  .d-table .d-badge i .i { width: 9px; height: 9px; }
   /* stat cards: a smaller icon so the label and the change fit on one line */
   .kpi { grid-template-columns: 32px minmax(0, 1fr); column-gap: 10px; padding: 18px 14px 14px; }
   .k-circ { width: 32px; height: 32px; font-size: 16px; }
