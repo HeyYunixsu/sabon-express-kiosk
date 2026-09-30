@@ -52,6 +52,9 @@ cd kiosk_server && npm test
 # Staff PIN hash for config.env
 node kiosk_server/tools/hash_pin.js 4821
 
+# Staff dashboard layout audit (dev PC: a running kiosk server, Chrome, Node 22+)
+node kiosk_server/tools/layout_audit.js
+
 # On a Pi: what is running, and the live logs
 sudo pm2 list
 sudo pm2 logs 01_Dispenser_Controller
