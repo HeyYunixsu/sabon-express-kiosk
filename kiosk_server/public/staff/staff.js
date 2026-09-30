@@ -424,6 +424,7 @@
     // The last sale the cloud confirmed can be from an earlier day this month.
     const lastSeen = s.lastSynced && (String(s.lastSynced).startsWith(state.day) ? StaffTime.timeOf(s.lastSynced) : StaffTime.dateTimeOf(s.lastSynced));
     const syncLine = lastSeen ? `${queued} · ${esc(lastSeen)}` : queued;
+    const sync = syncProblem();
     return [
       ['conn', 'wifi', 'Device Connection', state.online ? 'Controller connected' : 'Controller not answering',
         state.online ? ['ok', 'Online'] : ['bad', 'Offline']],
@@ -433,7 +434,8 @@
         !state.online ? ['off', '—'] : s.paused ? ['warn', 'Paused'] : s.pumpsReady < s.pumps ? ['warn', 'Check'] : ['ok', 'OK']],
       ['water', 'waves', 'Water Level', s.empty.length ? `${s.empty.length} ${s.empty.length === 1 ? 'tank' : 'tanks'} empty` : 'Normal level',
         !state.online ? ['off', '—'] : s.empty.length ? ['bad', 'Empty'] : ['ok', 'Normal']],
-      ['sync', 'sync', 'Last Sync', syncLine, s.uploadQueue ? ['warn', 'Waiting'] : ['ok', 'OK']],
+      ['sync', 'sync', 'Last Sync', sync ? esc(sync.short) : syncLine,
+        sync ? ['bad', s.idsProblem ? 'Setup' : 'Stuck'] : s.uploadQueue ? ['warn', 'Waiting'] : ['ok', 'OK']],
     ];
   }
 
@@ -651,13 +653,35 @@
 
   function renderBanner() {
     const n = (state && state.attention) || 0;
+    const sync = syncProblem();
     const b = $('d-banner');
-    b.classList.toggle('is-alert', n > 0);
+    b.classList.toggle('is-alert', n > 0 || !!sync);
     if (n) b.dataset.go = 'health'; else delete b.dataset.go;
     b.disabled = !n;
     b.querySelector('.q-chev').hidden = !n;
-    $('b-title').textContent = n ? `${n} ${n === 1 ? 'pour needs' : 'pours need'} attention today` : 'Smarter Kiosk. Better Service.';
-    $('b-sub').textContent = n ? 'Cut short and charged in full — settle it with the customer.' : 'Real-time monitoring for a seamless experience.';
+    // A pour to settle comes first: a customer may still be standing there.
+    const [title, sub] = n ? [`${n} ${n === 1 ? 'pour needs' : 'pours need'} attention today`, 'Cut short and charged in full — settle it with the customer.']
+      : sync ? ['Sales are not reaching the cloud', sync.long]
+      : ['Smarter Kiosk. Better Service.', 'Real-time monitoring for a seamless experience.'];
+    $('b-title').textContent = title;
+    $('b-sub').textContent = sub;
+  }
+
+  // Why sales are not uploading, or null. The cloud refuses every sale under
+  // the sample IDs or with the two swapped; anything else waiting STUCK_MIN
+  // is the internet or the cloud. { short } fits the Last Sync row.
+  const STUCK_MIN = 15;
+  function syncProblem() {
+    const s = state && state.status;
+    if (!s) return null;
+    if (s.idsProblem === 'unset') return { short: 'Machine IDs not set', long: 'Set machineId and vendorId in CONFIG/config.env on the kiosk.' };
+    if (s.idsProblem === 'wrong') return { short: 'Machine IDs look swapped', long: 'In config.env machineId is the number and vendorId the long code with dashes.' };
+    if (s.oldestPendingMin >= STUCK_MIN) {
+      const m = s.oldestPendingMin;
+      const age = m < 60 ? `${m} min` : m < 1440 ? `${Math.floor(m / 60)} h` : `${Math.floor(m / 1440)} days`;
+      return { short: `${s.uploadQueue} waiting · oldest ${age}`, long: `${s.uploadQueue} waiting, the oldest for ${age}. Check the kiosk's internet.` };
+    }
+    return null;
   }
 
   function renderTools() {

@@ -100,6 +100,13 @@ function createKioskServer({
   }
   // The staff dashboard's kiosk card.
   const kioskName = (config.KIOSK_NAME || '').trim() || `Kiosk ${letter}`;
+  // The cloud refuses every sale under the sample IDs (vendorId empty) or with
+  // the two swapped: machineId is the number, vendorId the dashed code.
+  const machineIdCfg = (config.machineId || '').trim();
+  const vendorIdCfg = (config.vendorId || '').trim();
+  const idsProblem = !machineIdCfg || !vendorIdCfg ? 'unset'
+    : !/^\d+$/.test(machineIdCfg) || !/^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(vendorIdCfg) ? 'wrong'
+    : null;
   const kioskLocation = (config.KIOSK_LOCATION || '').trim();
   const timeoutMs = orderTimeoutMs || clampInt(config.ORDER_PAY_TIMEOUT_S, 60, 900, 180) * 1000;
 
@@ -495,8 +502,10 @@ function createKioskServer({
   // cloud has confirmed this month (the uploader's archive).
   function kioskStatus() {
     const slots = ctrl.status ? ctrl.status.slots : [];
-    let uploadQueue = 0;
-    try { uploadQueue = fs.readdirSync(logs.transactions).filter((n) => n.endsWith('.json')).length; } catch (_) { /* none yet */ }
+    let pending = [];
+    try { pending = fs.readdirSync(logs.transactions).filter((n) => n.endsWith('.json')); } catch (_) { /* none yet */ }
+    // A sale file is named <unix seconds>_transaction_<slot>_<n>.json.
+    const oldest = Math.min(...pending.map((n) => parseInt(n, 10)).filter(Number.isFinite));
     const archive = readJsonl(path.join(logs.salesArchive, `sales-${dayOf(0).slice(0, 7)}.jsonl`));
     return {
       pumpsReady: slots.filter((s) => !s.empty).length,
@@ -504,8 +513,10 @@ function createKioskServer({
       empty: slots.filter((s) => s.empty).map((s) => products[s.slot - 1].name),
       paused: !!(ctrl.status && ctrl.status.paused),
       cashReady: staff.length > 0,
-      uploadQueue,
+      uploadQueue: pending.length,
       lastSynced: archive.length ? archive[archive.length - 1].date_created || null : null,
+      idsProblem,
+      oldestPendingMin: Number.isFinite(oldest) ? Math.max(0, Math.floor((Date.now() / 1000 - oldest) / 60)) : null,
     };
   }
 
