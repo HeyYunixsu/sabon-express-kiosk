@@ -198,18 +198,17 @@
     if (r.code !== 200) { focusNote = `Order ${number} is not known on this kiosk (it may be from another day).`; return; }
     const o = r.body.order;
     if (o.status === 'waiting') { focusNote = ''; return; }
-    const when = (o.closed || '').slice(11, 16);
+    const when = StaffTime.timeOf(o.closed);
     focusNote = o.status === 'paid' ? `Order ${o.number} was already paid (${o.by}, ${when}).`
       : o.status === 'expired' ? `Order ${o.number} expired — do not take payment. Ask the customer to order again.`
       : `Order ${o.number} was cancelled (${o.reason}${o.by ? `, ${o.by}` : ''}) — do not take payment.`;
   }
 
-  const hm = (d) => `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  const hm = (d) => StaffTime.clock12(d.getHours(), d.getMinutes());
   const dateOf = (d) => `${MONTHS[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
 
   function render() {
     if (!state) return;
-    $('s-demo').hidden = !state.qrDemo;
     const st = $('s-state');
     st.className = `d-chip is-${state.machine}`;
     st.querySelector('b').textContent = { ready: 'Online', dispensing: 'Dispensing', offline: 'Offline' }[state.machine];
@@ -241,9 +240,9 @@
     $('w-body').hidden = !o;
     $('w-empty').hidden = !!o;
     $('w-num').textContent = o ? `Order ${o.number}` : '';
-    // A QR (demo) order is paid on the customer's phone, never as cash here.
+    // A QR order is paid on the customer's phone, never as cash here.
     const qr = !!o && o.method === 'qr';
-    $('w-title').textContent = qr ? 'Waiting for QR payment (demo)' : 'Waiting for payment';
+    $('w-title').textContent = qr ? 'Waiting for QR payment' : 'Waiting for payment';
     $('w-paid').hidden = qr;
     if (o) {
       // A red/amber tone from the idle side (offline, empty tank) must not
@@ -274,7 +273,7 @@
       $('h-title').textContent = title;
       $('h-text').textContent = text;
       const d = new Date(stateAt);
-      $('h-updated').textContent = `Last updated: ${dateOf(d)} ${hm(d)}:${String(d.getSeconds()).padStart(2, '0')}`;
+      $('h-updated').textContent = `Last updated: ${dateOf(d)} · ${StaffTime.clock12(d.getHours(), d.getMinutes(), d.getSeconds())}`;
     }
     if (focusNote && (!o || o.number !== focus)) {
       $('w-msg').className = 's-msg';
@@ -336,18 +335,20 @@
   // Each sub-line is HTML, every part from the server escaped.
   function statusRows() {
     const s = state.status;
-    const synced = s.lastSynced ? `Last confirmed ${esc(String(s.lastSynced).slice(11, 16))}` : 'None this month';
-    const queued = s.uploadQueue ? `${s.uploadQueue} ${s.uploadQueue === 1 ? 'sale' : 'sales'} waiting to upload` : 'All sales uploaded';
+    const queued = s.uploadQueue ? `${s.uploadQueue} waiting` : 'All uploaded';
+    // The last sale the cloud confirmed can be from an earlier day this month.
+    const lastSeen = s.lastSynced && (String(s.lastSynced).startsWith(state.day) ? StaffTime.timeOf(s.lastSynced) : StaffTime.dateTimeOf(s.lastSynced));
+    const syncLine = lastSeen ? `${queued} · ${esc(lastSeen)}` : queued;
     return [
       ['conn', 'wifi', 'Device Connection', state.online ? 'Controller connected' : 'Controller not answering',
         state.online ? ['ok', 'Online'] : ['bad', 'Offline']],
-      ['pay', 'card', 'Payment', s.cashReady ? `Cash ready${state.qrDemo ? ', QR demo on' : ''}` : 'No staff PINs set up',
+      ['pay', 'card', 'Payment', s.cashReady ? (state.qrDemo ? 'Cash and QR ready' : 'Cash ready') : 'No staff PINs set up',
         s.cashReady ? ['ok', 'OK'] : ['bad', 'Setup']],
       ['pump', 'drop', 'Pump Status', `${s.pumpsReady}/${s.pumps} pumps ready`,
         !state.online ? ['off', '—'] : s.paused ? ['warn', 'Paused'] : s.pumpsReady < s.pumps ? ['warn', 'Check'] : ['ok', 'OK']],
       ['water', 'waves', 'Water Level', s.empty.length ? `Empty: ${esc(s.empty.join(', '))}` : 'Normal level',
         !state.online ? ['off', '—'] : s.empty.length ? ['bad', 'Empty'] : ['ok', 'Normal']],
-      ['sync', 'sync', 'Last Sync', `${queued}<br>${synced}`, s.uploadQueue ? ['warn', 'Waiting'] : ['ok', 'OK']],
+      ['sync', 'sync', 'Last Sync', syncLine, s.uploadQueue ? ['warn', 'Waiting'] : ['ok', 'OK']],
     ];
   }
 
@@ -355,7 +356,7 @@
     const rows = statusRows();
     const html = (pre) => rows.map(([id, ic, title, sub, [tone, word]]) => `<li id="${pre}-${id}" class="is-${tone}">
       <span class="s-ico">${icon(ic)}</span>
-      <div><b>${title}</b><small>${sub}</small></div>
+      <div><b>${title}</b><small title="${sub}">${sub}</small></div>
       <span class="s-word"><i></i>${word}</span>
     </li>`).join('');
     put('st-list', html('st'));
@@ -364,26 +365,25 @@
 
   // ---- orders table -------------------------------------------------------------
   const BADGE = { paid: ['Paid', 'check'], cancelled: ['Cancelled', 'x'], expired: ['Expired', 'clock'] };
-  // The reason in words, under the badge, visible without a hover.
-  const REASON_WORDS = {
-    customer: 'by customer', staff: 'by staff', out_of_stock: 'product ran out',
-    price_changed: 'price changed', timeout: 'not paid in time',
-  };
+  // Orders the kiosk closed by itself, in words, for the By column.
+  const SYSTEM_REASON = { out_of_stock: 'product ran out', price_changed: 'price changed', timeout: 'not paid in time' };
   function orderRows(rows, withDate) {
     return rows.map((x) => {
       const [label, ic] = BADGE[x.status] || [x.status, 'clock'];
-      // A QR order cancelled by the customer still says "customer", not "QR demo".
-      const who = x.reason === 'customer' ? 'customer' : x.by || (x.method === 'qr' ? 'QR demo' : '—');
       const c = String(x.closed || '');
-      const time = withDate && c ? `${MONTHS[Number(c.slice(5, 7)) - 1]} ${Number(c.slice(8, 10))} · ${c.slice(11, 16)}` : c.slice(11, 16);
-      const why = x.status === 'cancelled' && x.reason ? ` title="Cancelled: ${esc(x.reason)}"` : '';
-      const reasonWord = REASON_WORDS[x.reason];
-      const reasonLine = (x.status === 'cancelled' || x.status === 'expired') && reasonWord
-        ? `<small class="d-reason">${esc(reasonWord)}</small>` : '';
+      const time = withDate ? StaffTime.dateTimeOf(c) : StaffTime.timeOf(c);
+      // Who closed it, or why the kiosk did. A QR order paid on the phone
+      // says "QR" (the records name it "QR demo"); one the customer
+      // cancelled says "customer".
+      const system = SYSTEM_REASON[x.reason];
+      const by = x.reason === 'customer' ? 'customer'
+        : x.method === 'qr' && x.status === 'paid' ? 'QR'
+        : x.by || system || (x.method === 'qr' ? 'QR' : '—');
+      const why = x.reason ? ` title="${esc(x.status)}: ${esc(x.reason)}"` : '';
       return `<tr class="is-${esc(x.status)}">
         <td>${esc(x.number)}</td><td>${peso(x.amount)}</td>
-        <td><span class="d-badge b-${esc(x.status)}"${why}><i>${icon(ic)}</i>${esc(label)}</span>${reasonLine}</td>
-        <td>${esc(who)}</td><td>${esc(time)}</td>
+        <td><span class="d-badge b-${esc(x.status)}"${why}><i>${icon(ic)}</i>${esc(label)}</span></td>
+        <td${!x.by && system ? ' class="d-reason"' : ''} title="${esc(by)}">${esc(by)}</td><td>${esc(time)}</td>
       </tr>`;
     }).join('') || `<tr class="is-none"><td colspan="5">${withDate ? 'No orders in the last 7 days.' : 'No orders yet today.'}</td></tr>`;
   }
@@ -490,8 +490,8 @@
 
   // ---- tools --------------------------------------------------------------------
   const nameOf = (slot) => (tools && tools.products[slot - 1] ? tools.products[slot - 1].name : `Slot ${slot}`);
-  const hhmm = (d) => String(d || '').slice(11, 16);
-  const when = (d) => String(d || '').slice(5, 16);
+  const hhmm = (d) => StaffTime.timeOf(d);
+  const when = (d) => StaffTime.dateTimeOf(d);
   const validPrice = (v) => /^\d+$/.test(String(v)) && Number(v) >= 1 && Number(v) <= 10000;
 
   const BUSY_MSG = {
@@ -591,7 +591,7 @@
     }
     put('x-price-log', t.priceHistory.map((h) => `<li>
       <span>${esc(nameOf(h.slot))}</span><span>${peso(h.from)} → ${peso(h.to)}</span><span>${esc(when(h.date_created))}</span>
-    </li>`).join(''));
+    </li>`).join('') || '<li class="s-none">No price changes yet.</li>');
 
     $('x-prime-sec').textContent = `${t.primeSeconds} s each`;
     put('x-primes', t.products.map((p) => `<button class="s-tile" type="button" data-slot="${p.slot}"${t.primeBusy ? ' disabled' : ''}>
@@ -615,7 +615,8 @@
     </li>`).join('') || '<li class="s-none">Nothing today.</li>');
 
     const s = t.sales;
-    $('x-sales-sum').textContent = `${s.presses} presses · ${peso(s.amount)}`;
+    $('x-sales-total').textContent = peso(s.amount);
+    $('x-sales-sum').textContent = `${s.presses} ${s.presses === 1 ? 'press' : 'presses'} today`;
     put('x-sales', t.products.filter((p) => s.bySlot[p.slot]).map((p) => `<li>
       <span>${esc(p.name)} · ${s.bySlot[p.slot].presses} presses</span><span>${peso(s.bySlot[p.slot].amount)}</span>
     </li>`).join('') || '<li class="s-none">No sales yet today.</li>');
@@ -634,11 +635,11 @@
     put('x-machine', `<dt>Machine ID</dt><dd>${esc(m.machineId || '—')}</dd>
       <dt>Controller</dt><dd class="${m.online ? 'ok' : 'bad'}">${m.online ? 'Online' : 'Offline'}</dd>
       <dt>Staff page</dt><dd>${esc(m.staffBase ? `${m.staffBase}/staff` : 'No network address')}</dd>
-      <dt>QR demo</dt><dd class="${m.qrDemo ? 'warn' : ''}">${m.qrDemo ? 'On — QR payments are pretend' : 'Off'}</dd>
-      ${t.products.map((p) => {
-        const st = stockOf(p.slot);
-        return `<dt>${esc(p.name)}</dt><dd class="${!st ? '' : st.empty ? 'bad' : 'ok'}">${!st ? '—' : st.empty ? 'Empty' : 'Has stock'}</dd>`;
-      }).join('')}`);
+      <dt>QR payments</dt><dd>${m.qrDemo ? 'On' : 'Off'}</dd>`);
+    put('x-tanks', t.products.map((p) => {
+      const st = stockOf(p.slot);
+      return `<dt>${esc(p.name)}</dt><dd class="${!st ? '' : st.empty ? 'bad' : 'ok'}">${!st ? '—' : st.empty ? 'Empty' : 'Has stock'}</dd>`;
+    }).join(''));
   }
 
   $('x-prices').addEventListener('input', (e) => {

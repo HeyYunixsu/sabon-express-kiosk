@@ -92,127 +92,125 @@
         </div>
       </header>
 
-      <div class="s-demo" id="s-demo" hidden>QR DEMO ON — QR payments are pretend, no real money</div>
       <p class="s-note" id="x-busy" hidden></p>
 
-      <!-- Overview -->
+      <!-- Overview: stats / hero + quick actions / orders + attention + status -->
       <section id="v-overview" hidden>
-        <div class="d-grid">
-          <div class="d-col">
-            <div class="d-hero" id="w-card">
-              <div id="w-empty" class="h-idle">
-                <p class="h-kicker" id="h-kicker">TODAY'S PERFORMANCE</p>
-                <h1 id="h-title">Kiosk is Running Smoothly</h1>
-                <p class="h-text" id="h-text"></p>
-                <p class="h-updated"><i></i><span id="h-updated"></span></p>
-                <div class="h-art" aria-hidden="true">
-                  <img src="/img/products/1.webp" alt=""><img src="/img/products/3.webp" alt=""><img src="/img/products/5.webp" alt="">
-                  <img src="/img/products/2.webp" alt=""><img src="/img/products/4.webp" alt=""><img src="/img/products/6.webp" alt="">
-                </div>
-              </div>
-              <div id="w-body" class="h-wait" hidden>
-                <div class="w-left">
-                  <p class="h-kicker"><span id="w-title">Waiting for payment</span></p>
-                  <h1 id="w-num"></h1>
-                  <ul class="w-items" id="w-items"></ul>
-                </div>
-                <div class="w-right">
-                  <div class="w-total"><span>Total</span><b id="w-total"></b></div>
-                  <div class="w-timer" id="w-timer"></div>
-                  <div class="w-bar"><i id="w-bar"></i></div>
-                  <button class="s-btn s-primary s-big" id="w-paid" type="button">Mark as paid</button>
-                  <button class="s-btn s-danger-ghost" id="w-cancel" type="button">Cancel order</button>
-                </div>
-              </div>
-              <p class="s-msg" id="w-msg" role="alert"></p>
-            </div>
+        <div class="d-row">
+          <div class="d-card kpi span-3" id="k-sales">
+            <span class="k-circ">₱</span>
+            <div><small>Total Sales Today</small><b class="k-val"></b><p class="k-delta"></p><p class="k-sub"></p></div>
+            <svg class="k-spark" viewBox="0 0 200 48" preserveAspectRatio="none"></svg>
+          </div>
+          <div class="d-card kpi span-3" id="k-paid">
+            <span class="k-circ"><svg class="i"><use href="#i-check"/></svg></span>
+            <div><small>Paid Orders</small><b class="k-val"></b><p class="k-delta"></p><p class="k-sub"></p></div>
+            <svg class="k-spark" viewBox="0 0 200 48" preserveAspectRatio="none"></svg>
+          </div>
+          <div class="d-card kpi span-3" id="k-pending">
+            <span class="k-circ"><svg class="i"><use href="#i-clock"/></svg></span>
+            <div><small>Pending Orders</small><b class="k-val"></b><p class="k-delta"></p><p class="k-sub"></p></div>
+            <svg class="k-spark" viewBox="0 0 200 48" preserveAspectRatio="none"></svg>
+          </div>
+          <div class="d-card kpi span-3" id="k-cancel">
+            <span class="k-circ"><svg class="i"><use href="#i-x"/></svg></span>
+            <div><small>Cancelled</small><b class="k-val"></b><p class="k-delta"></p><p class="k-sub"></p></div>
+            <svg class="k-spark" viewBox="0 0 200 48" preserveAspectRatio="none"></svg>
+          </div>
+        </div>
 
-            <div class="d-kpis">
-              <div class="d-card kpi" id="k-sales">
-                <span class="k-circ c-blue">₱</span>
-                <div><small>Total Sales Today</small><b class="k-val"></b><p class="k-delta"></p><p class="k-sub"></p></div>
-                <svg class="k-spark" viewBox="0 0 200 48" preserveAspectRatio="none"></svg>
-              </div>
-              <div class="d-card kpi" id="k-paid">
-                <span class="k-circ c-green"><svg class="i"><use href="#i-check"/></svg></span>
-                <div><small>Paid Orders</small><b class="k-val"></b><p class="k-delta"></p><p class="k-sub"></p></div>
-                <svg class="k-spark" viewBox="0 0 200 48" preserveAspectRatio="none"></svg>
-              </div>
-              <div class="d-card kpi" id="k-pending">
-                <span class="k-circ c-amber"><svg class="i"><use href="#i-clock"/></svg></span>
-                <div><small>Pending Orders</small><b class="k-val"></b><p class="k-delta"></p><p class="k-sub"></p></div>
-                <svg class="k-spark" viewBox="0 0 200 48" preserveAspectRatio="none"></svg>
-              </div>
-              <div class="d-card kpi" id="k-cancel">
-                <span class="k-circ c-red"><svg class="i"><use href="#i-x"/></svg></span>
-                <div><small>Cancelled</small><b class="k-val"></b><p class="k-delta"></p><p class="k-sub"></p></div>
-                <svg class="k-spark" viewBox="0 0 200 48" preserveAspectRatio="none"></svg>
+        <div class="d-row">
+          <div class="d-hero span-8" id="w-card">
+            <div id="w-empty" class="h-idle">
+              <p class="h-kicker" id="h-kicker">TODAY'S PERFORMANCE</p>
+              <h1 id="h-title">Kiosk is Running Smoothly</h1>
+              <p class="h-text" id="h-text"></p>
+              <p class="h-updated"><i></i><span id="h-updated"></span></p>
+              <div class="h-art" aria-hidden="true">
+                <img src="/img/products/1.webp" alt=""><img src="/img/products/3.webp" alt=""><img src="/img/products/5.webp" alt="">
+                <img src="/img/products/2.webp" alt=""><img src="/img/products/4.webp" alt=""><img src="/img/products/6.webp" alt="">
               </div>
             </div>
+            <div id="w-body" class="h-wait" hidden>
+              <div class="w-left">
+                <p class="h-kicker"><span id="w-title">Waiting for payment</span></p>
+                <h1 id="w-num"></h1>
+                <ul class="w-items" id="w-items"></ul>
+              </div>
+              <div class="w-right">
+                <div class="w-total"><span>Total</span><b id="w-total"></b></div>
+                <div class="w-timer" id="w-timer"></div>
+                <div class="w-bar"><i id="w-bar"></i></div>
+                <button class="s-btn s-primary s-big" id="w-paid" type="button">Mark as paid</button>
+                <button class="s-btn s-danger-ghost" id="w-cancel" type="button">Cancel order</button>
+              </div>
+            </div>
+            <p class="s-msg" id="w-msg" role="alert"></p>
+          </div>
 
-            <div class="d-card">
-              <div class="d-head">
-                <h2><svg class="i"><use href="#i-list"/></svg>Recent Orders</h2>
-                <div class="d-switch" data-for="overview">
-                  <button type="button" data-range="today" class="on"><svg class="i"><use href="#i-cal"/></svg>Today</button>
-                  <button type="button" data-range="7d">7 Days</button>
-                </div>
+          <div class="d-card span-4">
+            <div class="d-head"><h2><svg class="i i-fill"><use href="#i-bolt"/></svg>Quick Actions</h2></div>
+            <div class="d-quick">
+              <button type="button" class="q-tile" data-go="transactions">
+                <svg class="i"><use href="#i-receipt"/></svg><b>Transactions</b><small>Orders and sales</small>
+                <span class="q-chev"><svg class="i"><use href="#i-chev"/></svg></span>
+              </button>
+              <button type="button" class="q-tile" data-go="inventory">
+                <svg class="i"><use href="#i-tag"/></svg><b>Inventory</b><small>Stock and prices</small>
+                <span class="q-chev"><svg class="i"><use href="#i-chev"/></svg></span>
+              </button>
+              <button type="button" class="q-tile" data-go="health" data-scroll="c-prime">
+                <svg class="i"><use href="#i-wind"/></svg><b>Air Clear</b><small>After a refill</small>
+                <span class="q-chev"><svg class="i"><use href="#i-chev"/></svg></span>
+              </button>
+              <button type="button" class="q-tile" data-go="inventory" data-scroll="c-credits">
+                <svg class="i"><use href="#i-coins"/></svg><b>Waiting Credits</b><small>Paid, not poured</small>
+                <span class="q-badge" id="q-credits" hidden></span>
+                <span class="q-chev"><svg class="i"><use href="#i-chev"/></svg></span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="d-row">
+          <div class="d-card span-8">
+            <div class="d-head">
+              <h2><svg class="i"><use href="#i-list"/></svg>Recent Orders</h2>
+              <div class="d-switch" data-for="overview">
+                <button type="button" data-range="today" class="on"><svg class="i"><use href="#i-cal"/></svg>Today</button>
+                <button type="button" data-range="7d">7 Days</button>
               </div>
-              <div class="d-table">
-                <table>
-                  <thead><tr><th>Order</th><th>Amount</th><th>Status</th><th>Staff</th><th>Time</th></tr></thead>
-                  <tbody id="t-list"></tbody>
-                </table>
-              </div>
-              <div class="d-foot">
-                <span><i></i><span id="t-sum"></span></span>
-                <button type="button" class="d-link" data-go="transactions">View all transactions<svg class="i"><use href="#i-arrow"/></svg></button>
-              </div>
+            </div>
+            <div class="d-table">
+              <table>
+                <thead><tr><th>Order</th><th>Amount</th><th>Status</th><th>By</th><th>Time</th></tr></thead>
+                <tbody id="t-list"></tbody>
+              </table>
+            </div>
+            <div class="d-foot">
+              <span><i></i><span id="t-sum"></span></span>
+              <button type="button" class="d-link" data-go="transactions">View all transactions<svg class="i"><use href="#i-arrow"/></svg></button>
             </div>
           </div>
 
-          <div class="d-col d-right">
-            <div class="d-card">
-              <div class="d-head"><h2><svg class="i i-fill"><use href="#i-shield"/></svg>Kiosk Status</h2></div>
-              <ul class="d-status" id="st-list"></ul>
-            </div>
-
-            <div class="d-card">
-              <div class="d-head"><h2><svg class="i i-fill"><use href="#i-bolt"/></svg>Quick Actions</h2></div>
-              <div class="d-quick">
-                <button type="button" class="q-tile is-main" data-go="transactions">
-                  <svg class="i"><use href="#i-receipt"/></svg><b>Transactions</b><small>Orders, sales</small>
-                  <span class="q-chev"><svg class="i"><use href="#i-chev"/></svg></span>
-                </button>
-                <button type="button" class="q-tile" data-go="inventory">
-                  <svg class="i"><use href="#i-tag"/></svg><b>Inventory &amp; Prices</b><small>Stock, prices</small>
-                  <span class="q-chev"><svg class="i"><use href="#i-chev"/></svg></span>
-                </button>
-                <button type="button" class="q-tile" data-go="health" data-scroll="c-prime">
-                  <svg class="i"><use href="#i-wind"/></svg><b>Air Clear</b><small>After a refill</small>
-                  <span class="q-chev"><svg class="i"><use href="#i-chev"/></svg></span>
-                </button>
-                <button type="button" class="q-tile" data-go="inventory" data-scroll="c-credits">
-                  <svg class="i"><use href="#i-coins"/></svg><b>Waiting Credits</b><small>Paid, not poured</small>
-                  <span class="q-badge" id="q-credits" hidden></span>
-                  <span class="q-chev"><svg class="i"><use href="#i-chev"/></svg></span>
-                </button>
-              </div>
-            </div>
-
+          <div class="d-col span-4">
             <button type="button" class="d-banner" id="d-banner">
               <span class="b-ico"><svg class="i"><use href="#i-spark"/></svg></span>
               <span class="b-text"><b id="b-title">Smarter Kiosk. Better Service.</b><small id="b-sub">Real-time monitoring for a seamless experience.</small></span>
               <span class="q-chev"><svg class="i"><use href="#i-chev"/></svg></span>
             </button>
+            <div class="d-card d-grow">
+              <div class="d-head"><h2><svg class="i i-fill"><use href="#i-shield"/></svg>Kiosk Status</h2></div>
+              <ul class="d-status" id="st-list"></ul>
+            </div>
           </div>
         </div>
       </section>
 
       <!-- Transactions -->
       <section id="v-transactions" hidden>
-        <div class="d-grid">
-          <div class="d-card">
+        <div class="d-row">
+          <div class="d-card span-8">
             <div class="d-head">
               <h2><svg class="i"><use href="#i-list"/></svg>Orders</h2>
               <div class="d-switch" data-for="transactions">
@@ -222,14 +220,15 @@
             </div>
             <div class="d-table">
               <table>
-                <thead><tr><th>Order</th><th>Amount</th><th>Status</th><th>Staff</th><th>Time</th></tr></thead>
+                <thead><tr><th>Order</th><th>Amount</th><th>Status</th><th>By</th><th>Time</th></tr></thead>
                 <tbody id="o-list"></tbody>
               </table>
             </div>
             <div class="d-foot"><span><i></i><span id="o-sum"></span></span></div>
           </div>
-          <div class="d-card">
-            <div class="d-head"><h2><svg class="i"><use href="#i-coins"/></svg>Today's sales</h2><span class="s-sum" id="x-sales-sum"></span></div>
+          <div class="d-card span-4">
+            <div class="d-head"><h2><svg class="i"><use href="#i-coins"/></svg>Today's sales</h2></div>
+            <div class="s-total"><b id="x-sales-total">₱0</b><span class="s-sum" id="x-sales-sum"></span></div>
             <ul class="s-list" id="x-sales"></ul>
             <ul class="s-list s-cash" id="x-cash"></ul>
           </div>
@@ -238,49 +237,64 @@
 
       <!-- Kiosk Health -->
       <section id="v-health" hidden>
-        <div class="d-grid d-half">
-          <div class="d-card">
-            <div class="d-head"><h2><svg class="i i-fill"><use href="#i-shield"/></svg>Kiosk Status</h2></div>
-            <ul class="d-status is-big" id="hx-status"></ul>
-          </div>
-          <div class="d-card">
+        <div class="d-row">
+          <div class="d-card span-12">
             <div class="d-head"><h2><svg class="i"><use href="#i-alert"/></svg>Needs attention</h2></div>
             <p class="s-hint">Pours cut short today. The customer was charged in full — settle it with them.</p>
             <ul class="s-list" id="x-attention"></ul>
           </div>
         </div>
-        <div class="d-card" id="c-prime">
-          <div class="d-head"><h2><svg class="i"><use href="#i-wind"/></svg>Air clear</h2><span class="s-sum" id="x-prime-sec"></span></div>
-          <p class="s-hint">After a gallon change, push the air out of the hose so the next customer is not charged for air.</p>
-          <div class="s-grid" id="x-primes"></div>
+        <div class="d-row">
+          <div class="d-card span-6">
+            <div class="d-head"><h2><svg class="i i-fill"><use href="#i-shield"/></svg>Kiosk Status</h2></div>
+            <ul class="d-status" id="hx-status"></ul>
+          </div>
+          <div class="d-card span-6" id="c-prime">
+            <div class="d-head"><h2><svg class="i"><use href="#i-wind"/></svg>Air clear</h2><span class="s-sum" id="x-prime-sec"></span></div>
+            <p class="s-hint">After a gallon change, push the air out of the hose so the next customer is not charged for air.</p>
+            <div class="s-grid s-grid-3" id="x-primes"></div>
+          </div>
         </div>
       </section>
 
       <!-- Inventory -->
       <section id="v-inventory" hidden>
-        <div class="d-card">
-          <div class="d-head"><h2><svg class="i"><use href="#i-box"/></svg>Stock per tank</h2></div>
-          <div class="d-stock" id="x-stock"></div>
+        <div class="d-row">
+          <div class="d-card span-12">
+            <div class="d-head"><h2><svg class="i"><use href="#i-box"/></svg>Stock per tank</h2></div>
+            <div class="d-stock" id="x-stock"></div>
+          </div>
         </div>
-        <div class="d-grid d-half">
-          <div class="d-card">
+        <div class="d-row">
+          <div class="d-card span-7">
             <div class="d-head"><h2><svg class="i"><use href="#i-tag"/></svg>Prices</h2><span class="s-sum">per press</span></div>
             <ul class="s-rows" id="x-prices"></ul>
-            <ul class="s-list s-hist" id="x-price-log"></ul>
           </div>
-          <div class="d-card" id="c-credits">
-            <div class="d-head"><h2><svg class="i"><use href="#i-coins"/></svg>Waiting credits</h2><span class="s-sum" id="x-credit-sum"></span></div>
-            <p class="s-hint">Paid for but never poured, last 7 days.</p>
-            <ul class="s-rows" id="x-credits"></ul>
+          <div class="d-col span-5">
+            <div class="d-card" id="c-credits">
+              <div class="d-head"><h2><svg class="i"><use href="#i-coins"/></svg>Waiting credits</h2><span class="s-sum" id="x-credit-sum"></span></div>
+              <p class="s-hint">Paid for but never poured, last 7 days.</p>
+              <ul class="s-rows" id="x-credits"></ul>
+            </div>
+            <div class="d-card d-grow">
+              <div class="d-head"><h2><svg class="i"><use href="#i-clock"/></svg>Recent price changes</h2></div>
+              <ul class="s-list s-hist" id="x-price-log"></ul>
+            </div>
           </div>
         </div>
       </section>
 
       <!-- Settings -->
       <section id="v-settings" hidden>
-        <div class="d-card d-narrow">
-          <div class="d-head"><h2><svg class="i"><use href="#i-gear"/></svg>This machine</h2></div>
-          <dl class="s-dl" id="x-machine"></dl>
+        <div class="d-row">
+          <div class="d-card span-6">
+            <div class="d-head"><h2><svg class="i"><use href="#i-gear"/></svg>This machine</h2></div>
+            <dl class="s-dl" id="x-machine"></dl>
+          </div>
+          <div class="d-card span-6">
+            <div class="d-head"><h2><svg class="i"><use href="#i-drop"/></svg>Tanks</h2></div>
+            <dl class="s-dl" id="x-tanks"></dl>
+          </div>
         </div>
       </section>
     </main>
@@ -300,6 +314,7 @@
 
   <p class="s-toast" id="x-msg" role="status" hidden></p>
 
+  <script src="/staff/time.js"></script>
   <script src="/staff/staff.js"></script>
 </body>
 </html>

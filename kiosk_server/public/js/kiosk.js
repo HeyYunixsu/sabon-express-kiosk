@@ -297,7 +297,7 @@
     $('pay-qr').disabled = !qrDemo || !staffBase || !machineReady() || sending;
     $('pay-qr-soon').hidden = qrDemo;
     $('pay-qr-desc').textContent = !qrDemo ? 'GCash, Maya, ShopeePay and bank apps'
-      : staffBase ? 'Scan with your phone (demo)' : 'Needs Wi-Fi';
+      : staffBase ? 'Scan with your phone' : 'Needs Wi-Fi';
   }
 
   const PAY_MSG = {
@@ -391,7 +391,7 @@
       }
       $('o-qr').hidden = !canQr;
       $('o-hint').hidden = !canQr;
-      $('o-hint').textContent = qr ? 'DEMO — no real money is taken.' : 'Or show staff a photo of this code.';
+      $('o-hint').textContent = qr ? 'Scan with your phone camera to pay.' : 'Or show staff a photo of this code.';
     }
     const left = Math.max(0, o.remainingMs - (Date.now() - pendingSeenAt));
     const s = Math.ceil(left / 1000);
@@ -718,7 +718,7 @@
       cashReady = s.cashReady;
       staffTablet = !!s.staffTablet;
       qrDemo = !!s.qrDemo;
-      if (qrDemo) $('kpi-pay').textContent = 'Cash · QR demo';
+      if (qrDemo) $('kpi-pay').textContent = 'Cash · QR';
       staffBase = s.staffBase || null;
       buildGrid();
       show('attract');

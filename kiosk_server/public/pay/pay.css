@@ -11,10 +11,9 @@
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
 html, body { margin: 0; background: var(--bg); color: var(--ink); -webkit-tap-highlight-color: transparent; }
-body { max-width: 480px; margin: 0 auto; padding: 0 14px 40px; }
+body { max-width: 480px; margin: 0 auto; padding: 16px 14px 40px; }
 button { font: inherit; border: 0; cursor: pointer; touch-action: manipulation; }
 
-.p-demo { margin: 0 -14px 16px; padding: 10px 14px; background: var(--amber); color: #1A1300; font-weight: 700; text-align: center; letter-spacing: .02em; }
 .p-card { background: var(--surface); border: 1px solid var(--line); border-radius: 20px; padding: 20px; text-align: center; }
 .p-logo { height: 44px; }
 .p-card h1 { margin: 10px 0 4px; font-size: 24px; }
