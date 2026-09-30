@@ -37,6 +37,8 @@
     <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
     <symbol id="i-kiosk" viewBox="0 0 24 24"><rect x="6" y="2" width="12" height="20" rx="2"/><rect x="8.5" y="5" width="7" height="8" rx="1"/><path d="M10 17h4"/></symbol>
     <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 3l10 18H2z"/><path d="M12 10v5M12 18h.01"/></symbol>
+    <symbol id="i-bang" viewBox="0 0 24 24"><path d="M12 6.5v7M12 17.5h.01"/></symbol>
+    <symbol id="i-dot" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4.5" fill="currentColor" stroke="none"/></symbol>
     <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5L18 18M18 6l-2.5 2.5M8.5 15.5L6 18"/></symbol>
   </svg>
 
@@ -312,7 +314,8 @@
     </div>
   </div>
 
-  <p class="s-toast" id="x-msg" role="status" hidden></p>
+  <!-- Notifications, top right: newest on top, three at most (staff.js notify()) -->
+  <div class="n-stack" id="x-msg" role="status" aria-live="polite"></div>
 
   <script src="/staff/time.js"></script>
   <script src="/staff/staff.js"></script>
