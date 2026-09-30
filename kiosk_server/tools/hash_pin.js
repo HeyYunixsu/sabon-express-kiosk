@@ -5,8 +5,8 @@
 const { hashPin } = require('../lib/staff');
 
 const pin = process.argv[2];
-if (!/^\d{4,8}$/.test(pin || '')) {
-  console.error('Usage: node hash_pin.js <PIN>   (4 to 8 digits)');
+if (!/^\d{4}$/.test(pin || '')) {
+  console.error('Usage: node hash_pin.js <PIN>   (4 digits)');
   process.exit(1);
 }
 console.log(hashPin(pin));

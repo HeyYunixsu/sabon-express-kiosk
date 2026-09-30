@@ -97,8 +97,10 @@ bool create_and_bind_server_socket(int port)
 
   if (bind(g_server_listening_socket, (struct sockaddr *)&g_server_address_info, sizeof(g_server_address_info)) < 0)
   {
-    log_error("socket", "bind() failed on port " + std::to_string(port));
+    log_error("socket", "bind() failed on port " + std::to_string(port)
+        + " (another process holds it?) - retrying");
     CLOSESOCKET(g_server_listening_socket);
+    g_server_listening_socket = (SocketHandle)-1;
     return false;
   }
   return true;
@@ -108,8 +110,9 @@ bool start_listening_for_connections()
 {
   if (listen(g_server_listening_socket, LISTEN_BACKLOG) < 0)
   {
-    log_error("socket", "listen() failed");
+    log_error("socket", "listen() failed - retrying");
     CLOSESOCKET(g_server_listening_socket);
+    g_server_listening_socket = (SocketHandle)-1;
     return false;
   }
   set_socket_non_blocking(g_server_listening_socket);
@@ -607,15 +610,31 @@ void cleanup_socket_environment()
 #endif
 }
 
+static void open_listening_socket(AppState &state)
+{
+  if (create_and_bind_server_socket(state.serverPort)) start_listening_for_connections();
+}
+
 void server_app_setup(AppState &state)
 {
   if (!initialize_socket_environment()) return;
-  if (!create_and_bind_server_socket(state.serverPort)) return;
-  start_listening_for_connections();
+  open_listening_socket(state);
 }
 
 void server_app_loop(AppState &state)
 {
+  // The port was busy at startup (say a restart overlapped the old process):
+  // keep trying. Giving up left a controller that pours but that nothing can
+  // reach, so the kiosk stayed Offline while PM2 showed it running.
+  if (g_server_listening_socket == (SocketHandle)-1) {
+    static auto last_try = std::chrono::steady_clock::now();
+    auto now_try = std::chrono::steady_clock::now();
+    if (now_try - last_try >= std::chrono::seconds(5)) {
+      last_try = now_try;
+      open_listening_socket(state);
+    }
+    if (g_server_listening_socket == (SocketHandle)-1) return;
+  }
   accept_new_client_connections(state);
   manage_connected_clients(state);
 

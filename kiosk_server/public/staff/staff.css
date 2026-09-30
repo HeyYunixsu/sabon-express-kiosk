@@ -76,11 +76,8 @@ h1, h2, p { margin: 0; }
 .nav-dot { margin-left: auto; width: 10px; height: 10px; border-radius: 50%; flex: none; background: var(--brand); animation: nav-dot-pulse 1.6s ease-in-out infinite; }
 @keyframes nav-dot-pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: .55; transform: scale(1.35); } }
 .d-sys { margin-top: auto; padding: 16px; border-radius: 14px; border: 1px solid var(--line); background: var(--surface-sub); }
-.d-sys b { display: flex; align-items: center; gap: 10px; font-size: 15px; }
-.d-sys b i { width: 8px; height: 8px; border-radius: 50%; background: var(--green); }
-.d-sys.is-off b { color: var(--red); }
-.d-sys.is-off b i { background: var(--red); }
-.d-sys small { display: block; margin-top: 8px; color: var(--ink-2); font-size: 13px; font-variant-numeric: tabular-nums; }
+.d-sys b { display: block; font-size: 22px; font-variant-numeric: tabular-nums; }
+.d-sys small { display: block; margin-top: 4px; color: var(--ink-2); font-size: 13px; font-variant-numeric: tabular-nums; }
 
 .d-main { display: grid; gap: 24px; min-width: 0; }
 .d-main > section { display: grid; grid-template-columns: minmax(0, 1fr); gap: 24px; }

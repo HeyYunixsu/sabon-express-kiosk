@@ -33,6 +33,11 @@ test('the pad names who confirmed', () => {
   assert.strictEqual(pad.check('9999').reason, 'wrong');
 });
 
+test('a PIN is exactly 4 digits: a longer one never matches', () => {
+  const pad = createPinPad(loadStaff({ STAFF1_NAME: 'Ana', STAFF1_PIN_HASH: hashPin('12345') }));
+  assert.strictEqual(pad.check('12345').reason, 'wrong');
+});
+
 test('no staff configured means no cash confirmation at all', () => {
   assert.strictEqual(createPinPad([]).check('1111').reason, 'no_staff');
 });

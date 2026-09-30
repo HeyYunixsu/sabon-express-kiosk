@@ -147,7 +147,7 @@
 
   // ---- sign in ----------------------------------------------------------------
   function renderLogin(msg) {
-    $('l-dots').innerHTML = Array.from({ length: Math.max(4, pin.length) }, (_, i) =>
+    $('l-dots').innerHTML = Array.from({ length: 4 }, (_, i) =>
       `<i class="${i < pin.length ? 'on' : ''}"></i>`).join('');
     $('l-go').disabled = pin.length < 4 || busy;
     if (msg !== undefined) $('l-msg').textContent = msg;
@@ -159,7 +159,7 @@
     const key = k.dataset.k;
     if (key === 'clear') pin = '';
     else if (key === 'back') pin = pin.slice(0, -1);
-    else if (pin.length < 8) pin += key;
+    else if (pin.length < 4) pin += key;   // a staff PIN is 4 digits
     renderLogin('');
   });
 
@@ -248,10 +248,8 @@
       // One sticky notification for the whole drop, not one per failed poll.
       if (!netDown) netNote = notify({ kind: 'bad', title: 'Cannot reach the kiosk', sub: 'Check the Wi-Fi.', sticky: true });
       netDown = true;
-      // "System Online" must not stay green during a drop; the next good
-      // poll calls render(), which puts both back from state.
-      $('s-sys').classList.add('is-off');
-      $('s-sys-word').textContent = 'No connection';
+      // The chip must not stay green during a drop; the next good poll calls
+      // render(), which puts it back from state.
       const st = $('s-state');
       st.className = 'd-chip is-offline';
       st.querySelector('b').textContent = 'No connection';
@@ -281,8 +279,6 @@
     $('k-name').textContent = state.kiosk.name;
     $('k-loc').hidden = !state.kiosk.location;
     $('k-loc').querySelector('span').textContent = state.kiosk.location;
-    $('s-sys').classList.toggle('is-off', !state.online);
-    $('s-sys-word').textContent = state.online ? 'System Online' : 'System Offline';
 
     renderHero();
     renderKpis();
@@ -439,7 +435,8 @@
 
   function renderStatus() {
     const rows = statusRows();
-    const html = (pre) => rows.map(([id, ic, title, sub, [tone, word]]) => `<li id="${pre}-${id}" class="is-${tone}">
+    // Overview leaves out Device Connection: its chip and hero already say it.
+    const html = (pre) => rows.filter(([id]) => pre !== 'st' || id !== 'conn').map(([id, ic, title, sub, [tone, word]]) => `<li id="${pre}-${id}" class="is-${tone}">
       <span class="s-ico">${icon(ic)}</span>
       <div><b>${title}</b><small title="${sub}">${sub}</small></div>
       <span class="s-word"><i></i>${word}</span>
@@ -792,7 +789,8 @@
   // ---- clock ----------------------------------------------------------------------
   function tick() {
     const d = new Date();
-    $('s-clock').textContent = `${dateOf(d)} · ${hm(d)}`;
+    $('s-time').textContent = hm(d);
+    $('s-clock').textContent = dateOf(d);
   }
   tick();
   setInterval(tick, 1000);
