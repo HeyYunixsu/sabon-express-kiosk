@@ -69,13 +69,14 @@
   // The cashier V2 notice, as a stack top right: newest on top, three at most.
   // ok/info leave after 5 s, bad/warn after 8 s, sticky ones when code or the
   // x closes them. Returns { close() }.
-  const N_ICON = { ok: 'check', bad: 'x', warn: 'bang', info: 'dot' };
+  // The glyph for each tone, the same in every status icon on the page.
+  const TONE_ICON = { ok: 'check', bad: 'x', warn: 'bang', info: 'dot', off: 'dot' };
   const N_LIFE = { ok: 5000, info: 5000, bad: 8000, warn: 8000 };
   const notices = [];           // open ones, newest first
   function notify({ kind = 'ok', title, sub = '', sticky = false, onClick = null }) {
     const el = document.createElement('div');
     el.className = `n-card is-${kind}${onClick ? ' is-action' : ''}`;
-    el.innerHTML = `<span class="n-ico">${icon(N_ICON[kind])}</span>
+    el.innerHTML = `<span class="n-ico">${icon(TONE_ICON[kind])}</span>
       <div class="n-body"><b></b><small></small></div>
       <button class="n-x" type="button" aria-label="Dismiss">${icon('x')}</button>`;
     el.querySelector('b').textContent = title;
@@ -252,6 +253,7 @@
       // render(), which puts it back from state.
       const st = $('s-state');
       st.className = 'd-chip is-offline';
+      st.querySelector('i').innerHTML = icon('x');
       st.querySelector('b').textContent = 'No connection';
     }
     setTimeout(poll, 1000);
@@ -275,6 +277,7 @@
     if (!state) return;
     const st = $('s-state');
     st.className = `d-chip is-${state.machine}`;
+    st.querySelector('i').innerHTML = icon({ ready: 'check', dispensing: 'drop', offline: 'x' }[state.machine]);
     st.querySelector('b').textContent = { ready: 'Online', dispensing: 'Dispensing', offline: 'Offline' }[state.machine];
     $('k-name').textContent = state.kiosk.name;
     $('k-loc').hidden = !state.kiosk.location;
@@ -346,6 +349,7 @@
       card.dataset.tone = tone;
       $('h-kicker').textContent = tone === 'ok' ? 'KIOSK STATUS' : 'NEEDS ATTENTION';
       $('h-title').textContent = title;
+      put('h-ico', icon(!state.online ? 'x' : empty ? 'bang' : state.machine === 'dispensing' ? 'drop' : 'check'));
       $('h-text').textContent = text;
       $('h-steps').hidden = $('h-go').hidden = !empty;
       if (empty) {
@@ -439,7 +443,7 @@
     const html = (pre) => rows.filter(([id]) => pre !== 'st' || id !== 'conn').map(([id, ic, title, sub, [tone, word]]) => `<li id="${pre}-${id}" class="is-${tone}">
       <span class="s-ico">${icon(ic)}</span>
       <div><b>${title}</b><small title="${sub}">${sub}</small></div>
-      <span class="s-word"><i></i>${word}</span>
+      <span class="s-word"><i>${icon(TONE_ICON[tone])}</i>${word}</span>
     </li>`).join('');
     put('st-list', html('st'));
     put('hx-status', html('hx'));
@@ -717,7 +721,7 @@
       const st = stockOf(p.slot);
       const [cls, word] = !st ? ['off', 'Unknown'] : st.empty ? ['bad', 'Empty'] : ['ok', 'Has stock'];
       return `<div class="st-card is-${cls}"><img src="${esc(p.img)}" alt=""><b>${esc(p.name)}</b>
-        <small>Tank ${p.slot}</small><span class="d-badge b-${cls}"><i>${icon(st && !st.empty ? 'check' : 'x')}</i>${word}</span></div>`;
+        <small>Tank ${p.slot}</small><span class="d-badge b-${cls}"><i>${icon(TONE_ICON[cls])}</i>${word}</span></div>`;
     }).join(''));
     put('x-machine', `<dt>Machine ID</dt><dd>${esc(m.machineId || '—')}</dd>
       <dt>Controller</dt><dd class="${m.online ? 'ok' : 'bad'}">${m.online ? 'Online' : 'Offline'}</dd>
