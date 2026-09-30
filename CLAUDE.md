@@ -239,6 +239,12 @@ not a closed or open socket.
 - **The cloud API port.** `Connection refused` in `03_Transaction_Uploader`
   means `API_BASE_URL` names a port the backend is not listening on, not a
   code fault.
+- **Sales the cloud refuses.** Every upload lands in `"failed"` echoing
+  `machineId: 1, vendorId: null` (the sample values) or the two swapped:
+  `config.env` needs `machineId` = the number and `vendorId` = the long
+  dashed code. The staff dashboard warns ("Sales are not reaching the
+  cloud"). Sale files already waiting keep the IDs they were written with,
+  so fixing the config does not rescue them; they must be rewritten.
 - **Pins that collide.** Serial (14, 15), SPI (7-11) and audio (18, 19) share
   pins with the slot map and must be disabled in `config.txt`;
   `docs/QUICK_INSTALL.md` has the block.
