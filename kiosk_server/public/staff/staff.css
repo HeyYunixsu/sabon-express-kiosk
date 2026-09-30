@@ -115,12 +115,14 @@ h1, h2, p { margin: 0; }
    makes it 2px without moving the layout. */
 .d-hero.is-live { border-color: var(--brand); box-shadow: inset 0 0 0 1px var(--brand); }
 .d-hero.is-focus { border-color: rgba(251,191,36,.6); }
-.h-idle { max-width: calc(100% - 270px); }
+/* The idle hero fills its row: message at the top, "Last updated" at the
+   foot, the bottles bottom-right -- never text floating in empty space. */
+.h-idle { max-width: calc(100% - 270px); flex: 1 1 auto; display: flex; flex-direction: column; }
 .h-kicker { font-size: 14px; letter-spacing: .06em; color: var(--ink-2); }
 #h-title { margin-top: 8px; font-size: 32px; line-height: 1.15; color: var(--ink); }
 .d-hero[data-tone="bad"] #h-title { color: var(--red); }
 .h-text { margin-top: 12px; font-size: 17px; color: var(--ink); }
-.h-updated { display: flex; align-items: center; gap: 10px; margin-top: 30px; font-size: 13px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.h-updated { display: flex; align-items: center; gap: 10px; margin-top: auto; padding-top: 24px; font-size: 13px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
 .h-updated i { width: 8px; height: 8px; border-radius: 50%; background: var(--green); }
 .d-hero[data-tone="warn"] .h-updated i, .d-hero[data-tone="bad"] .h-updated i { background: var(--red); }
 .h-art { position: absolute; right: 12px; top: 0; bottom: 0; width: 300px; display: flex; align-items: flex-end; justify-content: center; }
@@ -235,8 +237,8 @@ li.is-bad .s-word { color: var(--red); }
 li.is-off .s-word { color: var(--ink-2); }
 
 /* quick actions: four equal slate tiles */
-.d-quick { display: grid; gap: 10px; }
-.q-tile { display: grid; grid-template-columns: 24px minmax(0, 1fr) auto 28px; grid-template-areas: "ico title badge chev" "ico sub badge chev"; column-gap: 14px; align-items: center; height: 64px; padding: 0 14px; border-radius: 12px; text-align: left; background: var(--surface-sub); border: 1px solid var(--line); }
+.d-quick { display: grid; gap: 8px; }
+.q-tile { display: grid; grid-template-columns: 24px minmax(0, 1fr) auto 28px; grid-template-areas: "ico title badge chev" "ico sub badge chev"; column-gap: 14px; align-items: center; height: 56px; padding: 0 14px; border-radius: 12px; text-align: left; background: var(--surface-sub); border: 1px solid var(--line); }
 .q-tile:hover { border-color: var(--line-2); }
 .q-tile > .i { grid-area: ico; width: 24px; height: 24px; color: var(--ink-2); }
 .q-tile b { grid-area: title; align-self: end; font-size: 15px; line-height: 20px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

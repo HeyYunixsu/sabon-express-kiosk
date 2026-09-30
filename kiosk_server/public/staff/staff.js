@@ -338,7 +338,7 @@
     const queued = s.uploadQueue ? `${s.uploadQueue} waiting` : 'All uploaded';
     // The last sale the cloud confirmed can be from an earlier day this month.
     const lastSeen = s.lastSynced && (String(s.lastSynced).startsWith(state.day) ? StaffTime.timeOf(s.lastSynced) : StaffTime.dateTimeOf(s.lastSynced));
-    const syncLine = lastSeen ? `${queued} · ${esc(lastSeen)}` : `${queued} · none this month`;
+    const syncLine = lastSeen ? `${queued} · ${esc(lastSeen)}` : queued;
     return [
       ['conn', 'wifi', 'Device Connection', state.online ? 'Controller connected' : 'Controller not answering',
         state.online ? ['ok', 'Online'] : ['bad', 'Offline']],
