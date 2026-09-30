@@ -336,8 +336,8 @@
   // Each sub-line is HTML, every part from the server escaped.
   function statusRows() {
     const s = state.status;
-    const synced = s.lastSynced ? `Last confirmed ${esc(StaffTime.timeOf(s.lastSynced))}` : 'None this month';
-    const queued = s.uploadQueue ? `${s.uploadQueue} ${s.uploadQueue === 1 ? 'sale' : 'sales'} waiting to upload` : 'All sales uploaded';
+    const queued = s.uploadQueue ? `${s.uploadQueue} waiting` : 'All uploaded';
+    const syncLine = s.lastSynced ? `${queued} · ${esc(StaffTime.timeOf(s.lastSynced))}` : queued;
     return [
       ['conn', 'wifi', 'Device Connection', state.online ? 'Controller connected' : 'Controller not answering',
         state.online ? ['ok', 'Online'] : ['bad', 'Offline']],
@@ -347,7 +347,7 @@
         !state.online ? ['off', '—'] : s.paused ? ['warn', 'Paused'] : s.pumpsReady < s.pumps ? ['warn', 'Check'] : ['ok', 'OK']],
       ['water', 'waves', 'Water Level', s.empty.length ? `Empty: ${esc(s.empty.join(', '))}` : 'Normal level',
         !state.online ? ['off', '—'] : s.empty.length ? ['bad', 'Empty'] : ['ok', 'Normal']],
-      ['sync', 'sync', 'Last Sync', `${queued}<br>${synced}`, s.uploadQueue ? ['warn', 'Waiting'] : ['ok', 'OK']],
+      ['sync', 'sync', 'Last Sync', syncLine, s.uploadQueue ? ['warn', 'Waiting'] : ['ok', 'OK']],
     ];
   }
 
@@ -355,7 +355,7 @@
     const rows = statusRows();
     const html = (pre) => rows.map(([id, ic, title, sub, [tone, word]]) => `<li id="${pre}-${id}" class="is-${tone}">
       <span class="s-ico">${icon(ic)}</span>
-      <div><b>${title}</b><small>${sub}</small></div>
+      <div><b>${title}</b><small title="${sub}">${sub}</small></div>
       <span class="s-word"><i></i>${word}</span>
     </li>`).join('');
     put('st-list', html('st'));
@@ -364,26 +364,23 @@
 
   // ---- orders table -------------------------------------------------------------
   const BADGE = { paid: ['Paid', 'check'], cancelled: ['Cancelled', 'x'], expired: ['Expired', 'clock'] };
-  // The reason in words, under the badge, visible without a hover.
-  const REASON_WORDS = {
-    customer: 'by customer', staff: 'by staff', out_of_stock: 'product ran out',
-    price_changed: 'price changed', timeout: 'not paid in time',
-  };
+  // Orders the kiosk closed by itself, in words, for the By column.
+  const SYSTEM_REASON = { out_of_stock: 'product ran out', price_changed: 'price changed', timeout: 'not paid in time' };
   function orderRows(rows, withDate) {
     return rows.map((x) => {
       const [label, ic] = BADGE[x.status] || [x.status, 'clock'];
-      // A QR order cancelled by the customer still says "customer", not "QR demo".
-      const who = x.reason === 'customer' ? 'customer' : x.by || (x.method === 'qr' ? 'QR demo' : '—');
       const c = String(x.closed || '');
       const time = withDate ? StaffTime.dateTimeOf(c) : StaffTime.timeOf(c);
-      const why = x.status === 'cancelled' && x.reason ? ` title="Cancelled: ${esc(x.reason)}"` : '';
-      const reasonWord = REASON_WORDS[x.reason];
-      const reasonLine = (x.status === 'cancelled' || x.status === 'expired') && reasonWord
-        ? `<small class="d-reason">${esc(reasonWord)}</small>` : '';
+      // Who closed it, or why the kiosk did. A QR order cancelled by the
+      // customer says "customer", not "QR demo".
+      const system = SYSTEM_REASON[x.reason];
+      const by = x.reason === 'customer' ? 'customer'
+        : x.by || system || (x.method === 'qr' ? 'QR demo' : '—');
+      const why = x.reason ? ` title="${esc(x.status)}: ${esc(x.reason)}"` : '';
       return `<tr class="is-${esc(x.status)}">
         <td>${esc(x.number)}</td><td>${peso(x.amount)}</td>
-        <td><span class="d-badge b-${esc(x.status)}"${why}><i>${icon(ic)}</i>${esc(label)}</span>${reasonLine}</td>
-        <td>${esc(who)}</td><td>${esc(time)}</td>
+        <td><span class="d-badge b-${esc(x.status)}"${why}><i>${icon(ic)}</i>${esc(label)}</span></td>
+        <td${!x.by && system ? ' class="d-reason"' : ''}>${esc(by)}</td><td>${esc(time)}</td>
       </tr>`;
     }).join('') || `<tr class="is-none"><td colspan="5">${withDate ? 'No orders in the last 7 days.' : 'No orders yet today.'}</td></tr>`;
   }
