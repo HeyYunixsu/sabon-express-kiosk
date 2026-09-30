@@ -209,7 +209,6 @@
 
   function render() {
     if (!state) return;
-    $('s-demo').hidden = !state.qrDemo;
     const st = $('s-state');
     st.className = `d-chip is-${state.machine}`;
     st.querySelector('b').textContent = { ready: 'Online', dispensing: 'Dispensing', offline: 'Offline' }[state.machine];
@@ -241,9 +240,9 @@
     $('w-body').hidden = !o;
     $('w-empty').hidden = !!o;
     $('w-num').textContent = o ? `Order ${o.number}` : '';
-    // A QR (demo) order is paid on the customer's phone, never as cash here.
+    // A QR order is paid on the customer's phone, never as cash here.
     const qr = !!o && o.method === 'qr';
-    $('w-title').textContent = qr ? 'Waiting for QR payment (demo)' : 'Waiting for payment';
+    $('w-title').textContent = qr ? 'Waiting for QR payment' : 'Waiting for payment';
     $('w-paid').hidden = qr;
     if (o) {
       // A red/amber tone from the idle side (offline, empty tank) must not
@@ -343,7 +342,7 @@
     return [
       ['conn', 'wifi', 'Device Connection', state.online ? 'Controller connected' : 'Controller not answering',
         state.online ? ['ok', 'Online'] : ['bad', 'Offline']],
-      ['pay', 'card', 'Payment', s.cashReady ? `Cash ready${state.qrDemo ? ', QR demo on' : ''}` : 'No staff PINs set up',
+      ['pay', 'card', 'Payment', s.cashReady ? (state.qrDemo ? 'Cash and QR ready' : 'Cash ready') : 'No staff PINs set up',
         s.cashReady ? ['ok', 'OK'] : ['bad', 'Setup']],
       ['pump', 'drop', 'Pump Status', `${s.pumpsReady}/${s.pumps} pumps ready`,
         !state.online ? ['off', '—'] : s.paused ? ['warn', 'Paused'] : s.pumpsReady < s.pumps ? ['warn', 'Check'] : ['ok', 'OK']],
@@ -373,11 +372,13 @@
       const [label, ic] = BADGE[x.status] || [x.status, 'clock'];
       const c = String(x.closed || '');
       const time = withDate ? StaffTime.dateTimeOf(c) : StaffTime.timeOf(c);
-      // Who closed it, or why the kiosk did. A QR order cancelled by the
-      // customer says "customer", not "QR demo".
+      // Who closed it, or why the kiosk did. A QR order paid on the phone
+      // says "QR" (the records name it "QR demo"); one the customer
+      // cancelled says "customer".
       const system = SYSTEM_REASON[x.reason];
       const by = x.reason === 'customer' ? 'customer'
-        : x.by || system || (x.method === 'qr' ? 'QR demo' : '—');
+        : x.method === 'qr' && x.status === 'paid' ? 'QR'
+        : x.by || system || (x.method === 'qr' ? 'QR' : '—');
       const why = x.reason ? ` title="${esc(x.status)}: ${esc(x.reason)}"` : '';
       return `<tr class="is-${esc(x.status)}">
         <td>${esc(x.number)}</td><td>${peso(x.amount)}</td>
@@ -634,7 +635,7 @@
     put('x-machine', `<dt>Machine ID</dt><dd>${esc(m.machineId || '—')}</dd>
       <dt>Controller</dt><dd class="${m.online ? 'ok' : 'bad'}">${m.online ? 'Online' : 'Offline'}</dd>
       <dt>Staff page</dt><dd>${esc(m.staffBase ? `${m.staffBase}/staff` : 'No network address')}</dd>
-      <dt>QR demo</dt><dd class="${m.qrDemo ? 'warn' : ''}">${m.qrDemo ? 'On — QR payments are pretend' : 'Off'}</dd>`);
+      <dt>QR payments</dt><dd>${m.qrDemo ? 'On' : 'Off'}</dd>`);
     put('x-tanks', t.products.map((p) => {
       const st = stockOf(p.slot);
       return `<dt>${esc(p.name)}</dt><dd class="${!st ? '' : st.empty ? 'bad' : 'ok'}">${!st ? '—' : st.empty ? 'Empty' : 'Has stock'}</dd>`;

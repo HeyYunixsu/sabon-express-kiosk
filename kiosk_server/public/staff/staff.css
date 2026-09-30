@@ -104,8 +104,7 @@ h1, h2, p { margin: 0; }
 #s-out { padding-left: 18px; }
 #s-out .i { color: var(--ink-2); }
 #s-out:hover { border-color: var(--line-2); }
-.s-demo, .s-note { padding: 9px 16px; border-radius: 12px; background: var(--surface); border: 1px solid rgba(251,191,36,.4); color: var(--amber); font-size: 14px; font-weight: 700; }
-.s-demo { text-align: center; }
+.s-note { padding: 9px 16px; border-radius: 12px; background: var(--surface); border: 1px solid rgba(251,191,36,.4); color: var(--amber); font-size: 14px; font-weight: 700; }
 
 /* hero: a hero stretched by its row keeps its content centred */
 .d-hero { position: relative; overflow: hidden; display: flex; flex-direction: column; justify-content: center; min-height: 220px; padding: 28px; border-radius: var(--r); border: 1px solid var(--line); background: var(--surface); }
