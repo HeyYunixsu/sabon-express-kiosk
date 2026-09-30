@@ -337,14 +337,25 @@
       $('w-cancel').disabled = busy;
     } else {
       const s = state.status;
+      const n = s.empty.length;
+      // "Fabcon 1", "Fabcon 1 and Bleach Colored", "A, B and C"
+      const names = n > 1 ? `${s.empty.slice(0, -1).join(', ')} and ${s.empty[n - 1]}` : s.empty[0];
+      const empty = state.online && n > 0;
       const [tone, title, text] = !state.online
         ? ['bad', 'Kiosk is Offline', 'The kiosk is not answering. Check that it is switched on.']
-        : s.empty.length ? ['warn', 'A tank is empty', `${s.empty.join(', ')} — refill, then run an air clear.`]
+        : empty ? ['warn', n === 1 ? `${names} is empty` : `${n} tanks are empty`,
+          `Customers see ${names} as “Out of stock” until you:`]
         : state.machine === 'dispensing' ? ['ok', 'Dispensing…', 'A customer is pouring.']
         : ['ok', 'Kiosk is Running Smoothly', 'All systems are normal. Ready for orders.'];
       card.dataset.tone = tone;
+      $('h-kicker').textContent = tone === 'ok' ? 'KIOSK STATUS' : 'NEEDS ATTENTION';
       $('h-title').textContent = title;
       $('h-text').textContent = text;
+      $('h-steps').hidden = $('h-go').hidden = !empty;
+      if (empty) {
+        $('h-refill').textContent = n === 1 ? 'the tank.' : `the ${names} tanks.`;
+        $('h-clear').textContent = `${n === 1 ? 'on its nozzle' : 'on each nozzle'}, so the next customer gets soap, not air.`;
+      }
       const d = new Date(stateAt);
       $('h-updated').textContent = `Last updated: ${dateOf(d)} · ${StaffTime.clock12(d.getHours(), d.getMinutes(), d.getSeconds())}`;
     }
@@ -420,7 +431,7 @@
         s.cashReady ? ['ok', 'OK'] : ['bad', 'Setup']],
       ['pump', 'drop', 'Pump Status', `${s.pumpsReady}/${s.pumps} pumps ready`,
         !state.online ? ['off', '—'] : s.paused ? ['warn', 'Paused'] : s.pumpsReady < s.pumps ? ['warn', 'Check'] : ['ok', 'OK']],
-      ['water', 'waves', 'Water Level', s.empty.length ? `Empty: ${esc(s.empty.join(', '))}` : 'Normal level',
+      ['water', 'waves', 'Water Level', s.empty.length ? `${s.empty.length} ${s.empty.length === 1 ? 'tank' : 'tanks'} empty` : 'Normal level',
         !state.online ? ['off', '—'] : s.empty.length ? ['bad', 'Empty'] : ['ok', 'Normal']],
       ['sync', 'sync', 'Last Sync', syncLine, s.uploadQueue ? ['warn', 'Waiting'] : ['ok', 'OK']],
     ];

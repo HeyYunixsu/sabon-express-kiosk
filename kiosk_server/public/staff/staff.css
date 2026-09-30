@@ -124,6 +124,13 @@ h1, h2, p { margin: 0; }
 #h-title { margin-top: 8px; font-size: 32px; line-height: 1.15; color: var(--ink); }
 .d-hero[data-tone="bad"] #h-title { color: var(--red); }
 .h-text { margin-top: 12px; font-size: 17px; color: var(--ink); }
+.d-hero[data-tone] .h-kicker { color: var(--red); font-weight: 600; }
+.d-hero[data-tone="ok"] .h-kicker { color: var(--ink-2); font-weight: 400; }
+/* Empty tank: two numbered steps, then the button to the air clear. */
+.h-steps { list-style: none; counter-reset: step; margin-top: 14px; padding: 0; display: grid; gap: 10px; font-size: 16px; color: var(--ink); }
+.h-steps li { counter-increment: step; display: grid; grid-template-columns: 26px 1fr; align-items: center; gap: 12px; }
+.h-steps li::before { content: counter(step); display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: var(--surface-sub); border: 1px solid var(--line-2); font-size: 13px; font-weight: 700; }
+.h-go { align-self: flex-start; margin-top: 18px; gap: 8px; }
 .h-updated { display: flex; align-items: center; gap: 10px; margin-top: auto; padding-top: 24px; font-size: 13px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
 .h-updated i { width: 8px; height: 8px; border-radius: 50%; background: var(--green); }
 .d-hero[data-tone="warn"] .h-updated i, .d-hero[data-tone="bad"] .h-updated i { background: var(--red); }
@@ -346,6 +353,9 @@ li.is-off .s-word { color: var(--ink-2); }
   .h-art img { height: 104px; margin: 0 -16px 10px; }
   .h-art img:nth-child(1), .h-art img:nth-child(6) { height: 88px; }
   .h-art img:nth-child(3), .h-art img:nth-child(4) { height: 122px; }
+  /* Too narrow for the bottles and the steps: the steps win. */
+  .d-hero[data-tone="warn"] .h-art { display: none; }
+  .d-hero[data-tone="warn"] .h-idle { max-width: none; }
   .h-wait { grid-template-columns: minmax(0, 1fr); gap: 18px; }
   .d-stock, .s-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   /* The orders table is about 440 px here: tighter cells, the date-and-time
