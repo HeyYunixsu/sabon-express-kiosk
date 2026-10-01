@@ -26,7 +26,7 @@ layout for a customer's finger (nothing under 72px, main actions 96px+).
 | 2 | Kiosk server and customer screens, cash only | **Done**, tested end to end against the real controller; not yet on a Pi |
 | 3 | Counter cash + staff tablet: stage 1 (orders, mark paid) and stage 2 (staff tools) | **Done** — `docs/superpowers/specs/2026-09-28-counter-cash-design.md` |
 | 4 | QR payment | Blocked: backend payment endpoints do not exist yet. A pretend version for demos exists behind `QR_DEMO = 1` (`docs/superpowers/specs/2026-09-29-qr-demo-design.md`) |
-| 5 | Install runbook for a kiosk Pi | Last |
+| 5 | Install runbook for a kiosk Pi | **Done** — `docs/QUICK_INSTALL.md`, `check_install.sh`, `update.sh` |
 
 Each piece gets its own spec, plan and implementation.
 
@@ -54,6 +54,10 @@ node kiosk_server/tools/hash_pin.js 4821
 
 # Staff dashboard layout audit (dev PC: a running kiosk server, Chrome, Node 22+)
 node kiosk_server/tools/layout_audit.js
+
+# On a Pi: is the install right? / update and check
+./check_install.sh
+./update.sh
 
 # On a Pi: what is running, and the live logs
 sudo pm2 list
@@ -128,7 +132,8 @@ Ports: controller **8080** (`SOCKET_PORT`), kiosk server **3000**
 | `kiosk_server/public/staff/` | The staff dashboard (tablet/laptop): Overview, Transactions, Kiosk Health, Inventory, Settings |
 | `kiosk_server/lib/logs.js` | Reads the controller's and uploader's records for the staff tools, cached |
 | `CONFIG/config.env.sample` | Every setting. `CONFIG/README.md` explains each |
-| `docs/INSTALLATION.md`, `docs/QUICK_INSTALL.md` | Pi setup. Copied from the cashier product, adapted in piece 5 |
+| `docs/QUICK_INSTALL.md`, `docs/INSTALLATION.md` | Kiosk Pi install: the steps, and the reasons and troubleshooting |
+| `check_install.sh`, `update.sh` | The install check (read-only) and the one-command update |
 | `kiosk_exit_tool/` | Keyboard shortcut to escape the locked-down browser |
 
 ## Controller protocol
@@ -239,6 +244,12 @@ not a closed or open socket.
 - **The cloud API port.** `Connection refused` in `03_Transaction_Uploader`
   means `API_BASE_URL` names a port the backend is not listening on, not a
   code fault.
+- **Sales the cloud refuses.** Every upload lands in `"failed"` echoing
+  `machineId: 1, vendorId: null` (the sample values) or the two swapped:
+  `config.env` needs `machineId` = the number and `vendorId` = the long
+  dashed code. The staff dashboard warns ("Sales are not reaching the
+  cloud"). Sale files already waiting keep the IDs they were written with,
+  so fixing the config does not rescue them; they must be rewritten.
 - **Pins that collide.** Serial (14, 15), SPI (7-11) and audio (18, 19) share
   pins with the slot map and must be disabled in `config.txt`;
   `docs/QUICK_INSTALL.md` has the block.

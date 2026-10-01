@@ -62,7 +62,8 @@ test('status: pumps, empty tanks, upload queue, last synced sale', async (t) => 
   stub.empty[2] = 1;
   await until(() => k.ctrl.status.slots[2].empty);
   fs.mkdirSync(path.join(k.dir, 'transaction'), { recursive: true });
-  for (const n of ['1_transaction_1_0.json', '2_transaction_1_1.json', 'state.dat']) {
+  const now = Math.floor(Date.now() / 1000);
+  for (const n of [`${now}_transaction_1_0.json`, `${now}_transaction_1_1.json`, 'state.dat']) {
     fs.writeFileSync(path.join(k.dir, 'transaction', n), '{}');
   }
   writeRows(k, `logs/sales/sales-${day(0).slice(0, 7)}.jsonl`, [
@@ -73,7 +74,34 @@ test('status: pumps, empty tanks, upload queue, last synced sale', async (t) => 
   assert.deepStrictEqual(status, {
     pumpsReady: 5, pumps: 6, empty: ['Product 3'], paused: false, cashReady: true,
     uploadQueue: 2, lastSynced: `${day(0)} 08:30:00`,
+    idsProblem: 'unset', oldestPendingMin: 0,
   });
+});
+
+// The backend refuses sales under the sample IDs or with the two swapped, and
+// the uploader then keeps them forever: the dashboard must say so.
+test('status: machine IDs unset, swapped or right', async (t) => {
+  const uuid = '0a1b2c3d-1111-2222-3333-444455556666';
+  for (const [config, want] of [
+    [['machineId = 24'], 'unset'],
+    [['machineId = 24', 'vendorId ='], 'unset'],
+    [['machineId = 1', 'vendorId ='], 'unset'],
+    [[`machineId = ${uuid}`, 'vendorId = 24'], 'wrong'],
+    [['machineId = 24', `vendorId = ${uuid}`], null],
+  ]) {
+    const { k, headers } = await kiosk(t, { config });
+    assert.strictEqual((await state(k, headers)).status.idsProblem, want, config.join(' / '));
+  }
+});
+
+test('status: how long the oldest waiting sale has waited', async (t) => {
+  const { k, headers } = await kiosk(t);
+  assert.strictEqual((await state(k, headers)).status.oldestPendingMin, null);
+  fs.mkdirSync(path.join(k.dir, 'transaction'), { recursive: true });
+  const at = (minAgo) => Math.floor(Date.now() / 1000) - minAgo * 60;
+  fs.writeFileSync(path.join(k.dir, 'transaction', `${at(95)}_transaction_1_0.json`), '{}');
+  fs.writeFileSync(path.join(k.dir, 'transaction', `${at(5)}_transaction_2_0.json`), '{}');
+  assert.strictEqual((await state(k, headers)).status.oldestPendingMin, 95);
 });
 
 test('waiting credits count and today rows carry the method', async (t) => {
