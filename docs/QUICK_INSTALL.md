@@ -5,7 +5,7 @@ The reasons behind every step are in [INSTALLATION.md](INSTALLATION.md).
 
 ```
 0. Before you start  ->  1. Base packages  ->  2. Boot config (REBOOT)
-3. Get the code      ->  4. config.env     ->  5. Dependencies
+3. Get the code      ->  4. Dependencies   ->  5. config.env
 6. Build & launch    ->  7. Check          ->  8. Test the hardware
 9. Calibrate         ->  10. Staff tablet
 ```
@@ -93,7 +93,21 @@ git log --oneline -1
 
 ---
 
-## 4. Create `config.env`
+## 4. Install dependencies
+
+Installs WiringPi, Node.js 20, PM2 and log rotation. Takes a while.
+
+```bash
+cd ~/Desktop/sabon-express-kiosk
+./install_dependencies.sh 2>&1 | tee install_dependencies.log
+```
+
+If it stops on the Node.js version check, see
+[Node.js is too old](INSTALLATION.md#nodejs-is-too-old-or-npm-is-missing).
+
+---
+
+## 5. Create `config.env`
 
 `config.env` is not in git. Every machine needs its own.
 
@@ -138,20 +152,6 @@ Check the backend is reachable on that port (any number back means it is up;
 ```bash
 curl -sS -m 5 -o /dev/null -w '%{http_code}\n' "$(sed -n 's/^API_BASE_URL *= *"\{0,1\}\([^"]*\)"\{0,1\}/\1/p' CONFIG/config.env)/api/v1/auth/machine/transaction"
 ```
-
----
-
-## 5. Install dependencies
-
-Installs WiringPi, Node.js 20, PM2 and log rotation. Takes a while.
-
-```bash
-cd ~/Desktop/sabon-express-kiosk
-./install_dependencies.sh 2>&1 | tee install_dependencies.log
-```
-
-If it stops on the Node.js version check, see
-[Node.js is too old](INSTALLATION.md#nodejs-is-too-old-or-npm-is-missing).
 
 ---
 
@@ -265,6 +265,10 @@ everything and runs the check. If it says files *were changed on this Pi*,
 undo the ones you did not mean with `git checkout -- <file>` and run it again.
 `config.env` and `prices.conf` are never touched.
 
+Run it when nobody is using the kiosk — it restarts everything. If
+`setup_and_run.sh` or `uploaders/requirements.txt` changed, run
+`./setup_and_run.sh` instead.
+
 ---
 
 ## This Pi ran V1 or the cashier before
@@ -272,12 +276,21 @@ undo the ones you did not mean with `git checkout -- <file>` and run it again.
 ```bash
 sudo systemctl disable --now vendo_gui.service     # the old V1 screen, if present
 cd ~/Desktop/sabon-express-kiosk
-./setup_and_run.sh 2>&1 | tee setup_run.log        # re-points every process here
+sudo pm2 delete all                                  # the old install's processes
+./setup_and_run.sh 2>&1 | tee setup_run.log        # registers the kiosk's five processes
 ./check_install.sh
 ```
 
-Delete the old folder only when its `transaction/` folder is empty — anything
-in it is a sale the backend has not received yet.
+Its `transaction/` folder may hold sales the backend never received —
+nothing uploads them from there any more. Move them into the kiosk's folder:
+
+```bash
+sudo mv <old-folder>/transaction/*_transaction_*.json ~/Desktop/sabon-express-kiosk/transaction/
+```
+
+then run `./check_install.sh`. If they stay stuck, see
+[INSTALLATION.md "Sales refused by the backend"](INSTALLATION.md#sales-refused-by-the-backend).
+Delete the old folder after that.
 
 ---
 
@@ -289,5 +302,5 @@ in it is a sale the backend has not received yet.
 sudo pm2 list                                  # what is running
 sudo pm2 logs 01_Dispenser_Controller          # live controller log
 sudo pm2 logs 03_Transaction_Uploader          # are sales reaching the backend?
-sudo pm2 restart 01_Dispenser_Controller       # after editing config.env
+sudo pm2 restart all                           # after editing config.env
 ```

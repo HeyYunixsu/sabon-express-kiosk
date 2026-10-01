@@ -81,25 +81,43 @@ GPIO 9–27 power up with a pull-DOWN, which means five of the six pump relays s
 **energized from power-on until the controller starts**. That is 30+ seconds of
 a pump running dry on every boot. Driving them HIGH at firmware init fixes it.
 
+**Serial, SPI and audio** claim pins this machine's slot map also uses — serial
+is GPIO 14/15, SPI0 is GPIO 7–11 (LED6, water 5, water 6, BTN4, water 4), audio
+is GPIO 18/19 — so all three are disabled below, unconditionally, rather than
+only when found already on.
+
 ```bash
+sudo cp /boot/firmware/config.txt  /boot/firmware/config.txt.bak
+sudo cp /boot/firmware/cmdline.txt /boot/firmware/cmdline.txt.bak
+
 sudo tee -a /boot/firmware/config.txt >/dev/null <<'EOF'
 
 # --- Sabon dispenser ---
-# Buttons: wired to GND, need pull-ups (wiringPi's pull control is unreliable)
+# [all] so these apply on every Pi model, not just the last filter above
+[all]
+# Buttons are wired GPIO -> GND, so they need pull-ups
 gpio=10,13,14,23,24,25=ip,pu
-# Pump relays are active-low: drive HIGH at boot so they are OFF before the
-# controller starts, otherwise they energize during boot and run pumps dry
+# Pump relays are active-low: hold them OFF from power-on
 gpio=6,12,15,16,17,18=op,dh
+# Free our pins: SPI (7-11), audio (18-19), serial port (14-15)
+dtparam=spi=off
+dtparam=audio=off
+enable_uart=0
 EOF
 
+sudo sed -i -E 's/console=(serial0|ttyAMA0|ttyS0),[0-9]+ ?//g' /boot/firmware/cmdline.txt
 sudo reboot
 ```
+
+If the Pi does not boot, put the SD card in a PC and copy the two `.bak`
+files back over `config.txt` and `cmdline.txt`.
 
 Verify after the reboot:
 
 ```bash
-pinctrl get 10,13,14,23,24,25    # each: ip, pu   (input, pull-up)
-pinctrl get 6,12,15,16,17,18     # each: op, hi   (output, driven high = pump OFF)
+pinctrl get 10,13,14,23,24,25              # each: ip    pu | hi   (nothing plugged in)
+pinctrl get 6,12,15,16,17,18               # each: op    dh | hi   (pumps off)
+tr ' ' '\n' < /proc/cmdline | grep console  # only: console=tty1
 ```
 
 > **`raspi-gpio: command not found`** — on Debian trixie (kernel 6.18+) the tool
@@ -117,18 +135,6 @@ pinctrl get 6,12,15,16,17,18     # each: op, hi   (output, driven high = pump OF
 > up in Python instead. `RPi.GPIO` defaults to `PUD_OFF` and *actively writes*
 > it, so `GPIO.setup()` would undo a boot-time pull seconds after startup.
 > `water_level_monitoring.py` sets `PUD_UP` itself.
-
-### If SPI is enabled, turn it off
-
-GPIO 7, 8, 9, 10 and 11 are the SPI0 pins, and this project uses all five
-(LED6, water 5, water 6, BTN4, water 4). If SPI is on, the peripheral claims
-them and those channels die.
-
-```bash
-grep -nE "^dtparam=spi" /boot/firmware/config.txt
-```
-
-Comment out any `dtparam=spi=on` you find, then reboot. Nothing here uses SPI.
 
 ---
 
@@ -170,9 +176,9 @@ rather than discovering later:
 
 | Key | Why |
 |-----|-----|
-| `PRODUCT1_NAME`–`PRODUCT6_NAME`, `PRODUCT1_ML`–`PRODUCT6_ML` | What is actually in each tank. The dashboard, the sales report and the attention rows all label themselves from these. Left unset, every machine claims to sell "Product 1". |
+| `PRODUCT1_NAME`–`PRODUCT6_NAME`, `PRODUCT1_ML`–`PRODUCT6_ML` | What is actually in each tank. The kiosk screen, the staff page and the sales report all label themselves from these. Left unset, every machine claims to sell "Product 1". |
 | `PRICE1`–`PRICE6` | What a press costs, in whole pesos. **Unset means ₱5 for everything**, so takings will be wrong until these match the shop's real prices. Also editable later from the staff page (Inventory), which keeps an audit log. |
-| `ARM_TIMEOUT_SECONDS` | How long an unlocked button stays live, default 300. The button is physically live for this whole window — anyone can press it — so raise it only as far as the counter needs. |
+| `ARM_TIMEOUT_SECONDS` | How long paid presses stay on the machine before they expire to the unclaimed log, default 300. Anyone standing at the machine can dispense them in that window, so keep it no longer than customers actually need. |
 
 Log paths (`PRIME_LOG`, `INTERRUPTED_LOG`, `UNCLAIMED_LOG`, `SETTLEMENT_LOG`,
 `SALES_ARCHIVE_DIR`) all default sensibly under `<repo>/logs/`. If you do set
@@ -453,11 +459,34 @@ sudo ss -ltnp | grep 8080
 sales under `"failed"`, echoing `machineId: 1, vendorId: null` (the sample
 values) or the two swapped. Fix `machineId` (the number) and `vendorId` (the
 long code with dashes) in `CONFIG/config.env`, then
-`sudo pm2 restart 01_Dispenser_Controller`. Sales already waiting in
-`transaction/` keep the IDs they were written with: back the folder up and
-rewrite their `machine_id`/`vendor_id` before restarting
-`03_Transaction_Uploader`. The staff page warns about this ("Sales are not
-reaching the cloud").
+`sudo pm2 restart 01_Dispenser_Controller 05_Kiosk_Server`. Sales already
+waiting in `transaction/` keep the IDs they were written with:
+
+```bash
+cd ~/Desktop/sabon-express-kiosk
+sudo pm2 stop 03_Transaction_Uploader
+sudo cp -r transaction ~/transaction_backup_$(date +%F_%H%M)
+sudo python3 - <<'EOF'
+import json, glob, re
+env = {}
+for line in open('CONFIG/config.env'):
+    if '=' in line and not line.lstrip().startswith('#'):
+        k, v = line.split('=', 1); env[k.strip()] = v.strip().strip('"\'')
+m, v = env.get('machineId', ''), env.get('vendorId', '')
+assert m.isdigit(), 'machineId must be the machine NUMBER'
+assert re.fullmatch(r'[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}', v), 'vendorId must be the long code with dashes'
+n = 0
+for p in glob.glob('transaction/*_transaction_*.json'):
+    d = json.load(open(p))
+    if d.get('machine_id') == m and d.get('vendor_id') == v: continue
+    d['machine_id'], d['vendor_id'] = m, v
+    json.dump(d, open(p, 'w'), indent=2); n += 1
+print('fixed', n, 'files')
+EOF
+sudo pm2 start 03_Transaction_Uploader
+```
+
+The staff page warns about this ("Sales are not reaching the cloud").
 
 ### A button fires by itself
 

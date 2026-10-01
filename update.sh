@@ -40,7 +40,10 @@ if { [ "$before" != "$after" ] && ! git diff --quiet "$before" "$after" -- contr
   fi
 fi
 
-for n in $PM2_NAMES; do sudo pm2 restart "$n" >/dev/null && echo "Restarted $n"; done
+for n in $PM2_NAMES; do
+  if sudo pm2 restart "$n" >/dev/null; then echo "Restarted $n"
+  else echo "Could not restart $n (not registered? run ./setup_and_run.sh)"; fi
+done
 sudo pm2 save >/dev/null
 
 echo "Waiting for the kiosk to come up..."

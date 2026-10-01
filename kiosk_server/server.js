@@ -505,7 +505,12 @@ function createKioskServer({
     let pending = [];
     try { pending = fs.readdirSync(logs.transactions).filter((n) => n.endsWith('.json')); } catch (_) { /* none yet */ }
     // A sale file is named <unix seconds>_transaction_<slot>_<n>.json.
-    const oldest = Math.min(...pending.map((n) => parseInt(n, 10)).filter(Number.isFinite));
+    // A reduce, not Math.min(...pending.map(...)): with 100k+ files spread
+    // across call-stack-sized arguments throws a RangeError.
+    const oldest = pending.reduce((min, n) => {
+      const t = parseInt(n, 10);
+      return Number.isFinite(t) && t < min ? t : min;
+    }, Infinity);
     const archive = readJsonl(path.join(logs.salesArchive, `sales-${dayOf(0).slice(0, 7)}.jsonl`));
     return {
       pumpsReady: slots.filter((s) => !s.empty).length,

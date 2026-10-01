@@ -196,7 +196,7 @@ pm2_start_binary() {
     --log  "$cwd/pm2_${pm2_name}.log" \
     --time
 
-  log "[$pm2_name] PM2 entry registered/restarted"
+  log "[$pm2_name] PM2 entry registered"
 }
 
 # pm2_start_python <pm2_name> <script> <venv_root> <cwd> [KEY=VAL ...]
@@ -238,7 +238,7 @@ pm2_start_python() {
     --log         "$cwd/pm2_${pm2_name}.log" \
     --time
 
-  log "[$pm2_name] PM2 entry registered/restarted"
+  log "[$pm2_name] PM2 entry registered"
 }
 
 # 01_Dispenser_Controller — controller C++ binary

@@ -655,10 +655,13 @@
     const n = (state && state.attention) || 0;
     const sync = syncProblem();
     const b = $('d-banner');
-    b.classList.toggle('is-alert', n > 0 || !!sync);
-    if (n) b.dataset.go = 'health'; else delete b.dataset.go;
-    b.disabled = !n;
-    b.querySelector('.q-chev').hidden = !n;
+    // A sync problem is also fixed from Kiosk Health (it shows the same
+    // "Sales are not reaching the cloud" warning), so it opens the banner too.
+    const goHealth = n > 0 || !!sync;
+    b.classList.toggle('is-alert', goHealth);
+    if (goHealth) b.dataset.go = 'health'; else delete b.dataset.go;
+    b.disabled = !goHealth;
+    b.querySelector('.q-chev').hidden = !goHealth;
     // A pour to settle comes first: a customer may still be standing there.
     const [title, sub] = n ? [`${n} ${n === 1 ? 'pour needs' : 'pours need'} attention today`, 'Cut short and charged in full — settle it with the customer.']
       : sync ? ['Sales are not reaching the cloud', sync.long]
@@ -675,7 +678,7 @@
     const s = state && state.status;
     if (!s) return null;
     if (s.idsProblem === 'unset') return { short: 'Machine IDs not set', long: 'Set machineId and vendorId in CONFIG/config.env on the kiosk.' };
-    if (s.idsProblem === 'wrong') return { short: 'Machine IDs look swapped', long: 'In config.env machineId is the number and vendorId the long code with dashes.' };
+    if (s.idsProblem === 'wrong') return { short: 'Machine IDs are wrong', long: 'In config.env machineId is the number and vendorId the long code with dashes.' };
     if (s.oldestPendingMin >= STUCK_MIN) {
       const m = s.oldestPendingMin;
       const age = m < 60 ? `${m} min` : m < 1440 ? `${Math.floor(m / 60)} h` : `${Math.floor(m / 1440)} days`;

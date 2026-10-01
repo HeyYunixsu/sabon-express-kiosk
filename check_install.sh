@@ -45,7 +45,7 @@ echo "Sabon Express kiosk — install check ($ROOT)"
 # the two swapped; the staff dashboard warns about the same thing.
 section "Config"
 if [ ! -f "$CONFIG" ]; then
-  bad "CONFIG/config.env is missing" "cp CONFIG/config.env.sample CONFIG/config.env, then fill it in (docs/QUICK_INSTALL.md step 4)"
+  bad "CONFIG/config.env is missing" "cp CONFIG/config.env.sample CONFIG/config.env, then fill it in (docs/QUICK_INSTALL.md step 5)"
 else
   ok "CONFIG/config.env exists"
   mid="$(cfg machineId)"
@@ -117,24 +117,48 @@ else
 
   section "Processes"
   if command -v pm2 >/dev/null; then
-    PM2_JSON="$(sudo pm2 jlist 2>/dev/null)"
-    # "<status> <pid> <script path>" for one PM2 name, or nothing.
-    pm2_info() {
-      node -e '
+    if ! PM2_JSON="$(sudo -n pm2 jlist 2>/dev/null)"; then
+      skip "pm2 needs sudo: processes not checked (run: sudo ./check_install.sh)"
+    else
+      # "<status> <pid> <script path>" for one PM2 name, or nothing.
+      pm2_info() {
+        node -e '
+          const s = require("fs").readFileSync(0, "utf8");
+          let list = [];
+          try { list = JSON.parse(s.slice(s.indexOf("["))); } catch (_) { /* no list */ }
+          const p = list.find((x) => x.name === process.argv[1]);
+          if (p) console.log([p.pm2_env.status, p.pid || 0, p.pm2_env.pm_exec_path].join(" "));
+        ' "$1" <<<"$PM2_JSON"
+      }
+      for n in $PM2_NAMES; do
+        read -r st pid script <<<"$(pm2_info "$n")"
+        if [ -z "${st:-}" ]; then bad "$n is not registered in PM2" "./setup_and_run.sh"
+        elif [ "$st" != online ] || [ "${pid:-0}" = 0 ]; then bad "$n is not running (status $st, no pid)" "sudo pm2 logs $n --lines 40 --nostream"
+        elif [[ "${script:-}" != "$ROOT"/* ]]; then bad "$n runs from another folder: $script" "./setup_and_run.sh   (re-registers it from this folder)"
+        else ok "$n is running"; fi
+      done
+
+      # Anything PM2 knows about that is not one of ours: an old install
+      # (V1, the cashier) that setup_and_run.sh never touched, left running
+      # and saved. PM2's own modules (e.g. pm2-logrotate) are not processes
+      # of ours or anyone else's install, so they are not flagged.
+      extra_names="$(node -e '
         const s = require("fs").readFileSync(0, "utf8");
         let list = [];
         try { list = JSON.parse(s.slice(s.indexOf("["))); } catch (_) { /* no list */ }
-        const p = list.find((x) => x.name === process.argv[1]);
-        if (p) console.log([p.pm2_env.status, p.pid || 0, p.pm2_env.pm_exec_path].join(" "));
-      ' "$1" <<<"$PM2_JSON"
-    }
-    for n in $PM2_NAMES; do
-      read -r st pid script <<<"$(pm2_info "$n")"
-      if [ -z "${st:-}" ]; then bad "$n is not registered in PM2" "./setup_and_run.sh"
-      elif [ "$st" != online ] || [ "${pid:-0}" = 0 ]; then bad "$n is not running (status $st, no pid)" "sudo pm2 logs $n --lines 40 --nostream"
-      elif [[ "${script:-}" != "$ROOT"/* ]]; then bad "$n runs from another folder: $script" "./setup_and_run.sh   (re-registers it from this folder)"
-      else ok "$n is running"; fi
-    done
+        for (const x of list) {
+          if (x.pm2_env && x.pm2_env.pmx_module) continue;
+          console.log(x.name);
+        }
+      ' <<<"$PM2_JSON")"
+      while IFS= read -r name; do
+        [ -z "$name" ] && continue
+        case " $PM2_NAMES " in
+          *" $name "*) ;;
+          *) bad "Unexpected PM2 process: $name" "sudo pm2 delete $name && sudo pm2 save   (left by an old install?)" ;;
+        esac
+      done <<<"$extra_names"
+    fi
   else
     skip "pm2 not found: processes not checked"
   fi
