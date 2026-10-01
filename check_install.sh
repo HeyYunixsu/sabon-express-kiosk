@@ -117,7 +117,7 @@ else
 
   section "Processes"
   if command -v pm2 >/dev/null; then
-    if ! PM2_JSON="$(sudo -n pm2 jlist 2>/dev/null)"; then
+    if ! PM2_JSON="$(sudo -n timeout 20 pm2 jlist 2>/dev/null)"; then
       skip "pm2 needs sudo: processes not checked (run: sudo ./check_install.sh)"
     else
       # "<status> <pid> <script path>" for one PM2 name, or nothing.
