@@ -76,13 +76,10 @@ build_cpp() {
   log "[$name] Starting make in $dir"
   pushd "$dir" > /dev/null
 
-  # Clean previous artefacts so we always get a fresh build
-  if make clean 2>/dev/null; then
-    log "[$name] make clean — OK"
-  else
-    warn "[$name] make clean skipped (no clean target or already clean)"
-  fi
-
+  # No make clean first: if this build fails, the controller that was built
+  # before stays on disk and PM2 can still run it. make rebuilds whatever
+  # changed (the .d files track headers); run make clean by hand for a full
+  # rebuild.
   if make; then
     log "[$name] make — BUILD SUCCESSFUL"
   else
@@ -187,17 +184,17 @@ pm2_start_binary() {
     return 1
   fi
 
+  # Delete and start, never restart: an entry left by V1 or the cashier on
+  # this Pi would otherwise keep running that folder's program.
   if pm2_process_exists "$pm2_name"; then
-    log "[$pm2_name] Already registered — restarting"
-    sudo pm2 restart "$pm2_name"
-  else
-    log "[$pm2_name] New process — starting for the first time"
-    sudo env "${extra_env[@]}" pm2 start "$binary" \
-      --name "$pm2_name" \
-      --cwd  "$cwd" \
-      --log  "$cwd/pm2_${pm2_name}.log" \
-      --time
+    log "[$pm2_name] Already registered — re-registering from this folder"
+    sudo pm2 delete "$pm2_name"
   fi
+  sudo env "${extra_env[@]}" pm2 start "$binary" \
+    --name "$pm2_name" \
+    --cwd  "$cwd" \
+    --log  "$cwd/pm2_${pm2_name}.log" \
+    --time
 
   log "[$pm2_name] PM2 entry registered/restarted"
 }
@@ -229,18 +226,17 @@ pm2_start_python() {
     return 1
   fi
 
+  # Delete and start, never restart (see pm2_start_binary).
   if pm2_process_exists "$pm2_name"; then
-    log "[$pm2_name] Already registered — restarting"
-    sudo pm2 restart "$pm2_name"
-  else
-    log "[$pm2_name] New process — starting for the first time"
-    sudo env "${extra_env[@]}" pm2 start "$script" \
-      --name        "$pm2_name" \
-      --interpreter "$interpreter" \
-      --cwd         "$cwd" \
-      --log         "$cwd/pm2_${pm2_name}.log" \
-      --time
+    log "[$pm2_name] Already registered — re-registering from this folder"
+    sudo pm2 delete "$pm2_name"
   fi
+  sudo env "${extra_env[@]}" pm2 start "$script" \
+    --name        "$pm2_name" \
+    --interpreter "$interpreter" \
+    --cwd         "$cwd" \
+    --log         "$cwd/pm2_${pm2_name}.log" \
+    --time
 
   log "[$pm2_name] PM2 entry registered/restarted"
 }
@@ -275,16 +271,14 @@ pm2_start_python \
 # 05_Kiosk_Server — kiosk_server/server.js. Node standard library only, so
 # there is no npm install step.
 if pm2_process_exists "05_Kiosk_Server"; then
-  log "[05_Kiosk_Server] Already registered — restarting"
-  sudo pm2 restart "05_Kiosk_Server"
-else
-  log "[05_Kiosk_Server] Starting server.js"
-  sudo env NODE_ENV=production pm2 start "$SCRIPT_DIR/kiosk_server/server.js" \
-    --name "05_Kiosk_Server" \
-    --cwd  "$SCRIPT_DIR/kiosk_server" \
-    --log  "$SCRIPT_DIR/kiosk_server/pm2_05_Kiosk_Server.log" \
-    --time
+  log "[05_Kiosk_Server] Already registered — re-registering from this folder"
+  sudo pm2 delete "05_Kiosk_Server"
 fi
+sudo env NODE_ENV=production pm2 start "$SCRIPT_DIR/kiosk_server/server.js" \
+  --name "05_Kiosk_Server" \
+  --cwd  "$SCRIPT_DIR/kiosk_server" \
+  --log  "$SCRIPT_DIR/kiosk_server/pm2_05_Kiosk_Server.log" \
+  --time
 
 # The touchscreen: Chromium full screen on the kiosk page at every desktop
 # login. An XDG autostart entry rather than a PM2 process, because the browser
@@ -341,3 +335,10 @@ log "    sudo pm2 logs                          # tail all PM2 logs"
 log "    sudo pm2 logs <name>                   # tail one process"
 log "    sudo pm2 monit                         # live dashboard"
 log "================================================================"
+
+# --------------------------------------------------------------------------- #
+# 5. Install check
+# --------------------------------------------------------------------------- #
+section "5. Install check"
+sleep 8   # let the controller start and the kiosk server see it
+"$SCRIPT_DIR/check_install.sh" || warn "check_install.sh found problems — fix the ✗ lines above"
