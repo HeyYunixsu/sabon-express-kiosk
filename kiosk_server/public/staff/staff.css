@@ -83,8 +83,10 @@ h1, h2, p { margin: 0; }
 .d-main > section { display: grid; grid-template-columns: minmax(0, 1fr); gap: 24px; }
 
 /* ---- top bar ---- */
-.d-top { display: flex; align-items: stretch; justify-content: space-between; gap: var(--gap); height: 72px; }
-.d-kiosk { display: flex; align-items: center; gap: 14px; padding: 0 24px 0 12px; border-radius: var(--r); border: 1px solid var(--line); background: var(--surface); min-width: 360px; }
+/* One header card, like V2's: the kiosk on the left, who is signed in and
+   Sign out on the right. The three parts share one 48px height. */
+.d-top { display: flex; align-items: center; justify-content: space-between; gap: var(--gap); height: 72px; padding: 0 12px; border-radius: var(--r); border: 1px solid var(--line); background: var(--surface); }
+.d-kiosk { display: flex; align-items: center; gap: 14px; height: 48px; min-width: 0; }
 .k-ico { width: 48px; height: 48px; border-radius: 12px; display: grid; place-items: center; color: var(--ink-2); background: var(--surface-sub); border: 1px solid var(--line); }
 .k-ico .i { width: 26px; height: 26px; }
 .k-row { display: flex; align-items: center; gap: 14px; }
@@ -102,12 +104,12 @@ h1, h2, p { margin: 0; }
 .d-chip.is-dispensing i { background: var(--amber); }
 .d-chip.is-offline { color: var(--red); border-color: rgba(248,113,113,.45); }
 .d-chip.is-offline i { background: var(--red); }
-.d-user { display: flex; gap: 12px; }
-.d-pill { display: inline-flex; align-items: center; gap: 12px; height: 100%; padding: 0 22px 0 14px; border-radius: var(--r); border: 1px solid var(--line); background: var(--surface); font-size: 15px; }
+.d-user { display: flex; align-items: center; gap: 8px; }
+.d-pill { display: inline-flex; align-items: center; gap: 10px; height: 48px; padding: 0 16px 0 8px; border-radius: 12px; border: 1px solid transparent; font-size: 15px; }
 #s-me .i { width: 34px; height: 34px; padding: 7px; border-radius: 50%; color: var(--ink-2); background: var(--surface-sub); }
-#s-out { padding-left: 18px; }
+#s-out { padding: 0 16px; border-color: var(--line-2); }
 #s-out .i { color: var(--ink-2); }
-#s-out:hover { border-color: var(--line-2); }
+#s-out:hover { background: var(--surface-sub); }
 .s-note { padding: 9px 16px; border-radius: 12px; background: var(--surface); border: 1px solid rgba(251,191,36,.4); color: var(--amber); font-size: 14px; font-weight: 700; }
 
 /* hero: a hero stretched by its row keeps its content centred */
@@ -251,13 +253,9 @@ li.is-warn .s-word i { background: var(--amber); }
 li.is-bad .s-word i { background: var(--red); }
 
 /* quick actions: four equal slate tiles */
-.d-quick { display: grid; gap: 8px; }
-.q-tile { display: grid; grid-template-columns: 24px minmax(0, 1fr) auto 28px; grid-template-areas: "ico title badge chev" "ico sub badge chev"; column-gap: 14px; align-items: center; height: 56px; padding: 0 14px; border-radius: 12px; text-align: left; background: var(--surface-sub); border: 1px solid var(--line); }
-.q-tile:hover { border-color: var(--line-2); }
-.q-tile > .i { grid-area: ico; width: 24px; height: 24px; color: var(--ink-2); }
-.q-tile b { grid-area: title; align-self: end; font-size: 15px; line-height: 20px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.q-tile small { grid-area: sub; align-self: start; font-size: 12px; line-height: 16px; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.q-badge { grid-area: badge; min-width: 26px; height: 26px; padding: 0 8px; border-radius: 999px; display: grid; place-items: center; font-size: 13px; font-weight: 700; background: var(--brand); color: #fff; }
+/* The waiting-credits count on the sidebar's Inventory item. */
+.nav-badge { margin-left: auto; }
+.q-badge { min-width: 26px; height: 26px; padding: 0 8px; border-radius: 999px; display: grid; place-items: center; font-size: 13px; font-weight: 700; background: var(--brand); color: #fff; }
 .q-chev { grid-area: chev; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; color: var(--ink-2); border: 1px solid var(--line-2); }
 .q-chev .i { width: 16px; height: 16px; stroke-width: 2.4; }
 
@@ -299,6 +297,9 @@ li.is-bad .s-word i { background: var(--red); }
 .s-peso { display: inline-flex; align-items: center; gap: 6px; font-size: 18px; color: var(--ink-2); }
 .s-peso input { width: 90px; min-height: 44px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--line-2); background: var(--bg); color: var(--ink); font: inherit; font-size: 18px; font-weight: 700; }
 .s-peso input:focus { outline: 2px solid var(--brand); outline-offset: 1px; }
+/* A price is typed, never nudged by 1: no up/down arrows. */
+.s-peso input { appearance: textfield; -moz-appearance: textfield; }
+.s-peso input::-webkit-outer-spin-button, .s-peso input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 .s-acts { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
 /* waiting credits: the name and the note one line each, the two buttons
    side by side on the line below */
@@ -362,7 +363,6 @@ li.is-bad .s-word i { background: var(--red); }
   /* Too narrow for the bottles and the steps: the steps win. */
   .d-hero[data-tone="warn"] .h-art { display: none; }
   .d-hero[data-tone="warn"] .h-idle { max-width: none; }
-  .h-wait { grid-template-columns: minmax(0, 1fr); gap: 18px; }
   .d-stock, .s-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   /* The orders table is about 440 px here: tighter cells, the date-and-time
      column a step smaller, and the status as a dot and a word, no pill. */
@@ -437,12 +437,12 @@ li.is-bad .s-word i { background: var(--red); }
 #w-empty, #w-body { animation: fade-in .2s ease; }
 /* A stat value that changed (staff.js replays is-new). */
 .k-val.is-new { animation: fade-in .25s ease; }
-.s-btn, .d-nav button, .q-tile, .s-tile, .d-switch button, .d-link, .d-pill, .d-banner, .s-keypad button, .q-chev {
+.s-btn, .d-nav button, .s-tile, .d-switch button, .d-link, .d-pill, .d-banner, .s-keypad button, .q-chev {
   transition: background-color .15s ease, border-color .15s ease, color .15s ease, box-shadow .15s ease, transform .15s ease;
 }
 .d-nav button .i { transition: color .15s ease; }
 .d-table td { transition: background-color .15s ease; }
-.s-btn:not(:disabled):active, .s-tile:not(:disabled):active, .q-tile:active, .s-keypad button:active,
+.s-btn:not(:disabled):active, .s-tile:not(:disabled):active, .s-keypad button:active,
 .d-switch button:active, .d-banner:not(:disabled):active, .d-pill:active { transform: scale(.98); }
 @keyframes fade-in { from { opacity: 0; } }
 @keyframes rise-in { from { opacity: 0; transform: translateY(8px); } }

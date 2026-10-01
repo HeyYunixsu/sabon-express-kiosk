@@ -216,7 +216,7 @@
     const b = e.target.closest('button[data-view]');
     if (b) showView(b.dataset.view);
   });
-  // Quick actions, the table's link and the banner: go to a section, and
+  // The hero's Go to Air clear, the table's link and the banner: go to a section, and
   // to a card in it.
   document.addEventListener('click', (e) => {
     const b = e.target.closest('[data-go]');
@@ -432,8 +432,9 @@
         s.cashReady ? ['ok', 'OK'] : ['bad', 'Setup']],
       ['pump', 'drop', 'Pump Status', `${s.pumpsReady}/${s.pumps} pumps ready`,
         !state.online ? ['off', '—'] : s.paused ? ['warn', 'Paused'] : s.pumpsReady < s.pumps ? ['warn', 'Check'] : ['ok', 'OK']],
-      ['water', 'waves', 'Water Level', s.empty.length ? `${s.empty.length} ${s.empty.length === 1 ? 'tank' : 'tanks'} empty` : 'Normal level',
-        !state.online ? ['off', '—'] : s.empty.length ? ['bad', 'Empty'] : ['ok', 'Normal']],
+      // The float sensors say whether each tank still has soap, not a level.
+      ['water', 'waves', 'Soap Tanks', s.empty.length ? `${s.empty.length} ${s.empty.length === 1 ? 'tank' : 'tanks'} empty` : 'All tanks have soap',
+        !state.online ? ['off', '—'] : s.empty.length ? ['bad', 'Empty'] : ['ok', 'OK']],
       ['sync', 'sync', 'Last Sync', sync ? esc(sync.short) : syncLine,
         sync ? ['bad', s.idsProblem ? 'Setup' : 'Stuck'] : s.uploadQueue ? ['warn', 'Waiting'] : ['ok', 'OK']],
     ];

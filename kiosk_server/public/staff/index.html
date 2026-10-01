@@ -70,7 +70,7 @@
         <button type="button" data-view="overview"><svg class="i"><use href="#i-home"/></svg>Overview<span class="nav-dot" id="s-nav-dot" hidden></span></button>
         <button type="button" data-view="transactions"><svg class="i"><use href="#i-receipt"/></svg>Transactions</button>
         <button type="button" data-view="health"><svg class="i"><use href="#i-pulse"/></svg>Kiosk Health</button>
-        <button type="button" data-view="inventory"><svg class="i"><use href="#i-box"/></svg>Inventory</button>
+        <button type="button" data-view="inventory"><svg class="i"><use href="#i-box"/></svg>Inventory<span class="q-badge nav-badge" id="q-credits" title="Waiting credits" hidden></span></button>
         <button type="button" data-view="settings"><svg class="i"><use href="#i-gear"/></svg>Settings</button>
       </nav>
       <!-- The time only: whether the kiosk is up is the chip in the top bar. -->
@@ -123,7 +123,7 @@
         </div>
 
         <div class="d-row">
-          <div class="d-hero span-8" id="w-card">
+          <div class="d-hero span-12" id="w-card">
             <div id="w-empty" class="h-idle">
               <p class="h-kicker" id="h-kicker">KIOSK STATUS</p>
               <div class="h-head"><span class="h-ico" id="h-ico" aria-hidden="true"></span><h1 id="h-title">Kiosk is Running Smoothly</h1></div>
@@ -155,29 +155,6 @@
               </div>
             </div>
             <p class="s-msg" id="w-msg" role="alert"></p>
-          </div>
-
-          <div class="d-card span-4">
-            <div class="d-head"><h2><svg class="i i-fill"><use href="#i-bolt"/></svg>Quick Actions</h2></div>
-            <div class="d-quick">
-              <button type="button" class="q-tile" data-go="transactions">
-                <svg class="i"><use href="#i-receipt"/></svg><b>Transactions</b><small>Orders and sales</small>
-                <span class="q-chev"><svg class="i"><use href="#i-chev"/></svg></span>
-              </button>
-              <button type="button" class="q-tile" data-go="inventory">
-                <svg class="i"><use href="#i-tag"/></svg><b>Inventory</b><small>Stock and prices</small>
-                <span class="q-chev"><svg class="i"><use href="#i-chev"/></svg></span>
-              </button>
-              <button type="button" class="q-tile" data-go="health" data-scroll="c-prime">
-                <svg class="i"><use href="#i-wind"/></svg><b>Air Clear</b><small>After a refill</small>
-                <span class="q-chev"><svg class="i"><use href="#i-chev"/></svg></span>
-              </button>
-              <button type="button" class="q-tile" data-go="inventory" data-scroll="c-credits">
-                <svg class="i"><use href="#i-coins"/></svg><b>Waiting Credits</b><small>Paid, not poured</small>
-                <span class="q-badge" id="q-credits" hidden></span>
-                <span class="q-chev"><svg class="i"><use href="#i-chev"/></svg></span>
-              </button>
-            </div>
           </div>
         </div>
 

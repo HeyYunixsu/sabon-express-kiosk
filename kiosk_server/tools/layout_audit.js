@@ -76,8 +76,6 @@ function audit(wide) {
     if (sparks.length > 1 && spread(sparks.map((s) => box(s).bottom)) > TOL) fail('G sparkline bottoms', sparks.map((s) => Math.round(box(s).bottom)).join(','));
     for (const d of section.querySelectorAll('.kpi small, .k-delta, .k-sub')) if (vis(d) && box(d).height > 20) fail('G stat text wraps', d.textContent.trim());
   }
-  // H. Quick action titles and sub-lines are one line.
-  for (const t of section.querySelectorAll('.q-tile b, .q-tile small')) if (vis(t) && box(t).height > 20) fail('H quick action text wraps', t.textContent.trim());
   // I. Top bar: the kiosk card and both pills share height and centre line.
   const top = ['.d-kiosk', '#s-me', '#s-out'].map((s) => document.querySelector(s)).filter(vis);
   if (spread(top.map((e) => box(e).height)) > TOL) fail('I top bar heights', top.map((e) => `${label(e)}=${Math.round(box(e).height)}`).join(' '));
