@@ -520,6 +520,25 @@ pinctrl set 6 op dl    # relay ON
 sudo pm2 start 01_Dispenser_Controller
 ```
 
+### Setup stops: PM2 did not answer
+
+`setup_and_run.sh` gives every PM2 command 60 s. If it stops with `PM2 did
+not finish …`, the PM2 daemon itself is frozen (seen on the first kiosk Pi:
+it hung in the middle of a `pm2 delete`, and `pm2 kill` hung too). Stop it
+completely, then run setup again — PM2 starts empty and setup registers all
+five afresh:
+
+```bash
+sudo timeout 20 systemctl stop pm2-root
+sudo pkill -9 -f "[P]M2 v"
+sudo pkill -f "[s]abon-express-kiosk/controller/main"; sudo pkill -f "[k]iosk_server/server.js"; sudo pkill -f "[s]abon-express-kiosk/uploaders/"
+sudo rm -f /root/.pm2/rpc.sock /root/.pm2/pub.sock
+sudo timeout 30 pm2 ping          # must answer { msg: 'pong' }
+cd ~/Desktop/sabon-express-kiosk && ./setup_and_run.sh 2>&1 | tee setup_run.log
+```
+
+The `[P]M2` form matches PM2 but not the `pkill` command line itself.
+
 ### Nothing works after a reboot
 
 ```bash
