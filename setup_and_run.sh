@@ -160,9 +160,41 @@ log "Display user: $DISPLAY_USER  (home: $DISPLAY_USER_HOME)"
 # On Linux the Makefile produces 'main' (no .exe extension)
 CONTROLLER_BIN="$SCRIPT_DIR/controller/main"
 
-pm2_process_exists() {
-  # Returns 0 (true) if a PM2 process with this name is already registered
-  sudo pm2 describe "$1" &>/dev/null
+# PM2 can hang: on the first kiosk Pi (2026-10-01) it froze in the middle of a
+# delete and setup sat there for good. Every PM2 call gets a time limit, so
+# setup stops with the step named instead. Recovery: docs/INSTALLATION.md,
+# "Setup stops: PM2 did not answer".
+PM2_TIMEOUT=60
+pm2_failed() {
+  err "PM2 did not finish '$1' within ${PM2_TIMEOUT} s — see docs/INSTALLATION.md, \"Setup stops: PM2 did not answer\""
+  exit 1
+}
+pm2c() { sudo timeout "$PM2_TIMEOUT" pm2 "$@" || pm2_failed "pm2 $1"; }
+
+# The script PM2 runs under this name, or nothing when it is not registered.
+pm2_script_path() {
+  { sudo timeout 30 pm2 describe "$1" 2>/dev/null || true; } \
+    | awk -F'│' '/script path/ { gsub(/^ +| +$/, "", $3); print $3; exit }'
+}
+
+# pm2_reuse <pm2_name> <script>: an entry already running this folder's
+# program is restarted (returns 0: nothing more to do). One running another
+# folder's program (left by V1 or the cashier) is deleted, and a missing one
+# left alone (returns 1: the caller starts it). Deleting only when needed:
+# the hang above happened in a delete.
+pm2_reuse() {
+  local current
+  current="$(pm2_script_path "$1")"
+  if [ "$current" = "$2" ]; then
+    log "[$1] Already registered from this folder — restarting"
+    sudo timeout "$PM2_TIMEOUT" pm2 restart "$1" >/dev/null || pm2_failed "pm2 restart $1"
+    return 0
+  fi
+  if [ -n "$current" ]; then
+    log "[$1] Registered from $current — re-registering from this folder"
+    sudo timeout "$PM2_TIMEOUT" pm2 delete "$1" >/dev/null || pm2_failed "pm2 delete $1"
+  fi
+  return 1
 }
 
 # pm2_start_binary <pm2_name> <binary> <cwd> [KEY=VAL ...]
@@ -184,17 +216,12 @@ pm2_start_binary() {
     return 1
   fi
 
-  # Delete and start, never restart: an entry left by V1 or the cashier on
-  # this Pi would otherwise keep running that folder's program.
-  if pm2_process_exists "$pm2_name"; then
-    log "[$pm2_name] Already registered — re-registering from this folder"
-    sudo pm2 delete "$pm2_name"
-  fi
-  sudo env "${extra_env[@]}" pm2 start "$binary" \
+  if pm2_reuse "$pm2_name" "$binary"; then return 0; fi
+  sudo env "${extra_env[@]}" timeout "$PM2_TIMEOUT" pm2 start "$binary" \
     --name "$pm2_name" \
     --cwd  "$cwd" \
     --log  "$cwd/pm2_${pm2_name}.log" \
-    --time
+    --time || pm2_failed "pm2 start $pm2_name"
 
   log "[$pm2_name] PM2 entry registered"
 }
@@ -226,17 +253,13 @@ pm2_start_python() {
     return 1
   fi
 
-  # Delete and start, never restart (see pm2_start_binary).
-  if pm2_process_exists "$pm2_name"; then
-    log "[$pm2_name] Already registered — re-registering from this folder"
-    sudo pm2 delete "$pm2_name"
-  fi
-  sudo env "${extra_env[@]}" pm2 start "$script" \
+  if pm2_reuse "$pm2_name" "$script"; then return 0; fi
+  sudo env "${extra_env[@]}" timeout "$PM2_TIMEOUT" pm2 start "$script" \
     --name        "$pm2_name" \
     --interpreter "$interpreter" \
     --cwd         "$cwd" \
     --log         "$cwd/pm2_${pm2_name}.log" \
-    --time
+    --time || pm2_failed "pm2 start $pm2_name"
 
   log "[$pm2_name] PM2 entry registered"
 }
@@ -270,15 +293,13 @@ pm2_start_python \
 
 # 05_Kiosk_Server — kiosk_server/server.js. Node standard library only, so
 # there is no npm install step.
-if pm2_process_exists "05_Kiosk_Server"; then
-  log "[05_Kiosk_Server] Already registered — re-registering from this folder"
-  sudo pm2 delete "05_Kiosk_Server"
+if ! pm2_reuse "05_Kiosk_Server" "$SCRIPT_DIR/kiosk_server/server.js"; then
+  sudo env NODE_ENV=production timeout "$PM2_TIMEOUT" pm2 start "$SCRIPT_DIR/kiosk_server/server.js" \
+    --name "05_Kiosk_Server" \
+    --cwd  "$SCRIPT_DIR/kiosk_server" \
+    --log  "$SCRIPT_DIR/kiosk_server/pm2_05_Kiosk_Server.log" \
+    --time || pm2_failed "pm2 start 05_Kiosk_Server"
 fi
-sudo env NODE_ENV=production pm2 start "$SCRIPT_DIR/kiosk_server/server.js" \
-  --name "05_Kiosk_Server" \
-  --cwd  "$SCRIPT_DIR/kiosk_server" \
-  --log  "$SCRIPT_DIR/kiosk_server/pm2_05_Kiosk_Server.log" \
-  --time
 
 # The touchscreen: Chromium full screen on the kiosk page at every desktop
 # login. An XDG autostart entry rather than a PM2 process, because the browser
@@ -311,12 +332,12 @@ fi
 # This must run BEFORE pm2 save — the save writes the process list that the
 # generated pm2-root.service will resurrect on boot.
 log "Registering PM2 systemd startup hook..."
-sudo pm2 startup systemd
+pm2c startup systemd
 log "PM2 startup hook registered — OK"
 
 # Persist PM2 process list so it survives reboot
 log "Saving PM2 process list (sudo pm2 save)..."
-sudo pm2 save
+pm2c save
 log "PM2 list saved"
 
 # --------------------------------------------------------------------------- #
@@ -325,7 +346,7 @@ log "PM2 list saved"
 section "4. Final status summary"
 
 log "PM2 process list:"
-sudo pm2 list
+pm2c list
 
 log ""
 log "================================================================"
