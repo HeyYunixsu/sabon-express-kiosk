@@ -1,7 +1,5 @@
 # Installing on a New Raspberry Pi
 
-> **Copied from the cashier product, not yet adapted.** Boot config, wiring, hardware tests and calibration apply to a kiosk Pi as written. The repo name, the cashier dashboard and the tablet steps do not: they are rewritten in build piece 5 (install runbook).
-
 Copy-paste runbook for provisioning a fresh Pi from a blank OS image to a
 running machine. Every command is meant to be pasted as-is except where a
 `<placeholder>` appears.
@@ -138,15 +136,10 @@ Comment out any `dtparam=spi=on` you find, then reboot. Nothing here uses SPI.
 
 ```bash
 cd ~/Desktop
-git clone https://github.com/HeyYunixsu/sabon-vendo-cashier.git
-cd sabon-vendo-cashier
+git clone https://github.com/HeyYunixsu/sabon-express-kiosk.git
+cd sabon-express-kiosk
 git log --oneline -1
 ```
-
-> `master` now carries the six-slot work — the feature branch was merged on
-> 2026-09-04. Older notes told you to check out `feat/enable-six-products`;
-> that is no longer needed, and the branch will not have the credit-accounting
-> or one-tap staging work that landed after the merge.
 
 ---
 
@@ -156,25 +149,21 @@ git log --oneline -1
 it is the one file you must create by hand on every machine.
 
 ```bash
-cd ~/Desktop/sabon-vendo-cashier
+cd ~/Desktop/sabon-express-kiosk
 cp CONFIG/config.env.sample CONFIG/config.env
 nano CONFIG/config.env
 ```
 
-Three values are machine-specific and must be set:
+Two values are machine-specific and must be set:
 
 | Key | What to put |
 |-----|-------------|
-| `vendorId` | The vendor UUID from the cloud dashboard |
-| `machineId` | This machine's number — **unique per Pi** |
-| `TRANSACTION_DIR` | Absolute path: `/home/<user>/Desktop/sabon-vendo-cashier/transaction` |
+| `machineId` | This machine's **number** — unique per Pi, and must match the backend |
+| `vendorId` | The vendor's **long code with dashes**, from the backend |
 
-`TRANSACTION_DIR` must be absolute and must match this clone's real location.
-If the username is not `dgsi`, change it. Get the correct value with:
-
-```bash
-echo "TRANSACTION_DIR=$HOME/Desktop/sabon-vendo-cashier/transaction"
-```
+Swapping them, or leaving the sample's empty `vendorId`, makes the backend
+refuse every sale ([Sales refused by the backend](#sales-refused-by-the-backend)).
+Leave `TRANSACTION_DIR` unset: it defaults to `<repo>/transaction`.
 
 Everything else has a working default, but three groups are worth setting now
 rather than discovering later:
@@ -182,13 +171,13 @@ rather than discovering later:
 | Key | Why |
 |-----|-----|
 | `PRODUCT1_NAME`–`PRODUCT6_NAME`, `PRODUCT1_ML`–`PRODUCT6_ML` | What is actually in each tank. The dashboard, the sales report and the attention rows all label themselves from these. Left unset, every machine claims to sell "Product 1". |
-| `PRICE1`–`PRICE6` | What a press costs, in whole pesos. **Unset means ₱5 for everything**, so takings will be wrong until these match the shop's real prices. Also editable later from the dashboard's Settings, which keeps an audit log. |
+| `PRICE1`–`PRICE6` | What a press costs, in whole pesos. **Unset means ₱5 for everything**, so takings will be wrong until these match the shop's real prices. Also editable later from the staff page (Inventory), which keeps an audit log. |
 | `ARM_TIMEOUT_SECONDS` | How long an unlocked button stays live, default 300. The button is physically live for this whole window — anyone can press it — so raise it only as far as the counter needs. |
 
 Log paths (`PRIME_LOG`, `INTERRUPTED_LOG`, `UNCLAIMED_LOG`, `SETTLEMENT_LOG`,
 `SALES_ARCHIVE_DIR`) all default sensibly under `<repo>/logs/`. If you do set
 them, **use absolute paths** — a relative value is resolved differently by the
-controller and the dashboard, and they will silently read and write different
+controller and the kiosk server, and they will silently read and write different
 files. And never point one inside `TRANSACTION_DIR`: the uploader POSTs every
 file in there to the cloud as a sale.
 
@@ -203,7 +192,7 @@ be guessed.
 ## 4. Install system dependencies
 
 ```bash
-cd ~/Desktop/sabon-vendo-cashier
+cd ~/Desktop/sabon-express-kiosk
 ./install_dependencies.sh 2>&1 | tee install_dependencies.log
 ```
 
@@ -220,12 +209,12 @@ re-run; it skips anything already present.
 ## 5. Build and launch
 
 ```bash
-cd ~/Desktop/sabon-vendo-cashier
+cd ~/Desktop/sabon-express-kiosk
 ./setup_and_run.sh 2>&1 | tee setup_run.log
 ```
 
-This builds the controller, creates the Python venv, installs npm dependencies,
-registers all five processes with PM2, and persists them for auto-start on boot.
+This builds the controller, creates the Python venv,
+registers all five processes with PM2, persists them for auto-start on boot, and runs ./check_install.sh.
 
 Run the test suite too — it catches a bad build before the hardware does:
 
@@ -233,17 +222,24 @@ Run the test suite too — it catches a bad build before the hardware does:
 cd controller && make test
 ```
 
-Expect **647 passed, 0 failed**.
+Expect **0 failed** on the last line.
 
 ---
 
 ## 6. Verify
 
 ```bash
-sudo pm2 list
+./check_install.sh
 ```
 
-Five processes, all `online`:
+Every line ✓ and `All good` at the end. It checks the config, the controller
+program and port 8080, the five PM2 processes (online, with a pid, from this
+folder), the kiosk server, waiting sales, the boot config, the touchscreen
+autostart and PM2's start at boot. `online` in `pm2 list` alone is **not**
+proof: a process can show `online` with pid `N/A` when its program is
+missing.
+
+The five processes:
 
 | PM2 name | Runs |
 |----------|------|
@@ -251,16 +247,7 @@ Five processes, all `online`:
 | `02_Water_Sensors` | `uploaders/water_level_monitoring.py` |
 | `03_Transaction_Uploader` | `uploaders/transaction_uploader.py` |
 | `04_Status_Uploader` | `uploaders/status_uploader.py` |
-| `05_Cashier_Dashboard` | `cashier_dashboard/server.js` |
-
-Then confirm both listeners are actually bound — `online` in PM2 is not proof a
-process is working:
-
-```bash
-sudo ss -tlnp | grep -E ':80 |:8080 '
-```
-
-You want two lines: **:8080** owned by `main`, **:80** owned by `node`.
+| `05_Kiosk_Server` | `kiosk_server/server.js` (port 3000) |
 
 Check the controller came up with the right pin map and sensor polarity:
 
@@ -268,13 +255,9 @@ Check the controller came up with the right pin map and sensor polarity:
 sudo pm2 logs 01_Dispenser_Controller --lines 30 --nostream | grep -E "Slot |Water sensor"
 ```
 
-Open the dashboard:
-
-```bash
-hostname -I          # the Pi's LAN address
-```
-
-Browse to `http://<pi-ip>/` — **port 80, no port suffix.**
+The kiosk opens full screen on the touchscreen at login. The staff page is
+`http://<pi-ip>:3000/staff` (`hostname -I` for the address) when
+`STAFF_TABLET = 1`.
 
 ---
 
@@ -316,7 +299,7 @@ Separate from the water sensors, and easy to skip because nothing complains.
 what decides how much liquid the customer gets for their money.
 
 **If the key is absent the controller uses compiled-in defaults measured on a
-different machine.** It boots clean, the dashboard looks right, the logs look
+different machine.** It boots clean, the kiosk looks right, the logs look
 right, and every pour is the wrong size. Check what is actually loaded:
 
 ```bash
@@ -329,12 +312,12 @@ been calibrated on this machine.
 
 ### Measuring
 
-Use **Clear Air** in the dashboard's Settings, which runs one pump for
+Use **Air clear** on the staff page (Kiosk Health), which runs one nozzle for
 `PRIME_SECONDS` (default 3) without recording a sale.
 
 1. Put a measuring cup under the nozzle for the slot you are calibrating.
 2. Prime once first, to fill the tube — air in the line ruins the measurement.
-3. Empty the cup, tap **Clear Air** once more, and measure what comes out.
+3. Empty the cup, tap **Air clear** once more, and measure what comes out.
 4. Work out the seconds for the volume you sell:
 
 ```
@@ -365,25 +348,18 @@ sudo pm2 logs 01_Dispenser_Controller --lines 30 --nostream | grep "Slot "
 
 ---
 
-## Upgrading an existing Pi
-
-A `git pull` alone is **not enough** if you are coming from before the rename.
-PM2 stores absolute script paths and the old process names.
+## Updating an existing Pi
 
 ```bash
-cd ~/Desktop/sabon-vendo-cashier
-git pull
-sudo pm2 delete all
-rm -rf coin_slot                    # stale gitignored binary the pull leaves behind
-cd controller && make clean && make && make test
-cd .. && ./setup_and_run.sh 2>&1 | tee setup_run.log
-sudo pm2 save
+cd ~/Desktop/sabon-express-kiosk
+./update.sh
 ```
 
-`rm -rf coin_slot` matters: `git pull` moves the tracked files to `controller/`,
-but the compiled `main` and `*.o` are gitignored, so the old directory lingers
-with a stale binary in it. `config.env` needs no edit — `TRANSACTION_DIR` and
-the venv path never contained `coin_slot`.
+It refuses to run over local edits to tracked files (it lists them), pulls,
+rebuilds the controller only when `controller/` changed or `controller/main`
+is missing — with `make`, never `make clean` first, so a failed build leaves
+the running controller in place — restarts the five processes and runs
+`./check_install.sh`.
 
 ---
 
@@ -399,7 +375,7 @@ the executable bit in the repo and the chmod step is gone.
 Nothing of yours is at risk here -- the change is a file mode, not content:
 
 ```bash
-cd ~/Desktop/sabon-vendo-cashier
+cd ~/Desktop/sabon-express-kiosk
 git status --short          # confirm only these scripts are listed
 git checkout -- setup_and_run.sh install_dependencies.sh
 git pull
@@ -455,25 +431,33 @@ Confirm you got the NodeSource build, not Debian's:
 apt-cache policy nodejs      # should show deb.nodesource.com
 ```
 
-### Dashboard says `online` but the browser cannot reach it
-
-Check what it is actually running:
+### The kiosk says Offline, but `pm2 list` says online
 
 ```bash
-sudo pm2 describe 05_Cashier_Dashboard | grep -E "script path"
-sudo pm2 logs 05_Cashier_Dashboard --lines 30
-sudo ss -tlnp | grep ':80 '
+./check_install.sh
+ls -la controller/main
+sudo ss -ltnp | grep 8080
 ```
 
-- **Script path is a bare `node` binary** — an old `setup_and_run.sh` bug. Fixed
-  in current code; re-run the script.
-- **`EADDRINUSE`** — something else holds port 80, often a preinstalled web
-  server: `sudo systemctl disable --now lighttpd`
-- **`EACCES`** — not running as root. Port 80 needs it; all processes must start
-  via `sudo pm2`.
-- **`MODULE_NOT_FOUND`** — `cd cashier_dashboard && npm install --production`
-- **Works as `curl -I http://localhost/` on the Pi but not from a laptop** —
-  network path, not the app.
+- **`controller/main` is missing** — PM2 shows `01_Dispenser_Controller`
+  `online` with pid `N/A` because it has nothing to start. Build it:
+  `cd controller && make`, then `sudo pm2 restart 01_Dispenser_Controller`.
+- **Nothing on 8080 but `main` exists** — read
+  `sudo pm2 logs 01_Dispenser_Controller --lines 40 --nostream`. A
+  `bind() failed on port 8080` line means another program holds the port;
+  the controller retries every 5 s, so find and stop the other one.
+
+### Sales refused by the backend
+
+`sudo pm2 logs 03_Transaction_Uploader --lines 40 --nostream` shows the
+sales under `"failed"`, echoing `machineId: 1, vendorId: null` (the sample
+values) or the two swapped. Fix `machineId` (the number) and `vendorId` (the
+long code with dashes) in `CONFIG/config.env`, then
+`sudo pm2 restart 01_Dispenser_Controller`. Sales already waiting in
+`transaction/` keep the IDs they were written with: back the folder up and
+rewrite their `machine_id`/`vendor_id` before restarting
+`03_Transaction_Uploader`. The staff page warns about this ("Sales are not
+reaching the cloud").
 
 ### A button fires by itself
 
@@ -524,6 +508,7 @@ sudo pm2 save
 ### Useful commands
 
 ```bash
+./check_install.sh                        # is everything right?
 sudo pm2 logs                             # all processes
 sudo pm2 logs 01_Dispenser_Controller     # one process
 sudo pm2 monit                            # live CPU/memory

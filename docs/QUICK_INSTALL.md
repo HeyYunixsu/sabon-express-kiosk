@@ -1,19 +1,26 @@
-# Quick Install — New Raspberry Pi
-
-> **Copied from the cashier product, not yet adapted.** Boot config, wiring, hardware tests and calibration apply to a kiosk Pi as written. The repo name, the cashier dashboard and the tablet steps do not: they are rewritten in build piece 5 (install runbook).
+# Quick Install — Kiosk Raspberry Pi
 
 Paste each block in order. Replace anything in `<angle brackets>`.
 The reasons behind every step are in [INSTALLATION.md](INSTALLATION.md).
 
 ```
-1. Base packages  ->  2. Boot config (REBOOT)  ->  3. Get the code
-4. config.env     ->  5. Dependencies          ->  6. Build & launch
-7. Verify         ->  8. Test the hardware     ->  9. Calibrate
+0. Before you start  ->  1. Base packages  ->  2. Boot config (REBOOT)
+3. Get the code      ->  4. config.env     ->  5. Dependencies
+6. Build & launch    ->  7. Check          ->  8. Test the hardware
+9. Calibrate         ->  10. Staff tablet
 ```
 
-Before you start: flash **Raspberry Pi OS (64-bit)** with Raspberry Pi Imager,
-set the username, WiFi and SSH in Imager, then boot and log in.
-Ethernet is safer than WiFi for the install.
+---
+
+## 0. Before you start
+
+Flash **Raspberry Pi OS (64-bit), with desktop** using Raspberry Pi Imager. In
+Imager set the username, the Wi-Fi and SSH, then boot and log in. A network
+cable is safer than Wi-Fi for the install.
+
+Have these ready: this machine's **number** (`machineId`), the vendor's
+**long code with dashes** (`vendorId`), the backend address (`API_BASE_URL`),
+and a 4-digit PIN for each staff member.
 
 ---
 
@@ -79,8 +86,8 @@ files back over `config.txt` and `cmdline.txt`.
 
 ```bash
 cd ~/Desktop
-git clone https://github.com/HeyYunixsu/sabon-vendo-cashier.git
-cd sabon-vendo-cashier
+git clone https://github.com/HeyYunixsu/sabon-express-kiosk.git
+cd sabon-express-kiosk
 git log --oneline -1
 ```
 
@@ -90,57 +97,46 @@ git log --oneline -1
 
 `config.env` is not in git. Every machine needs its own.
 
-**Replacing an old Pi?** Copy its settings and saved prices across instead of
-starting from the sample (the old Pi must be on the same network):
+> **Replacing an old kiosk Pi?** Copy its settings and saved prices instead
+> (the old Pi must be on the same network), then go straight to the check
+> below:
+>
+> ```bash
+> cd ~/Desktop/sabon-express-kiosk
+> scp <user>@<old-pi-ip>:~/Desktop/sabon-express-kiosk/CONFIG/config.env  CONFIG/config.env
+> scp <user>@<old-pi-ip>:~/Desktop/sabon-express-kiosk/CONFIG/prices.conf CONFIG/prices.conf
+> ```
+
+**New machine:**
 
 ```bash
-cd ~/Desktop/sabon-vendo-cashier
-scp <user>@<old-pi-ip>:~/Desktop/sabon-vendo-cashier/CONFIG/config.env  CONFIG/config.env
-scp <user>@<old-pi-ip>:~/Desktop/sabon-vendo-cashier/CONFIG/prices.conf CONFIG/prices.conf
-```
-
-If this Pi's username differs from the old one, fix the paths it copied:
-
-```bash
-sed -i "s|/home/[^/]*/Desktop/sabon-vendo-cashier|$HOME/Desktop/sabon-vendo-cashier|g" CONFIG/config.env
-```
-
-Then skip to the `nano` line below and only check `machineId`.
-
-**Brand-new machine?** Start from the sample and fix its paths for this Pi:
-
-```bash
-cd ~/Desktop/sabon-vendo-cashier
+cd ~/Desktop/sabon-express-kiosk
 cp CONFIG/config.env.sample CONFIG/config.env
-sed -i "s|/home/dgsi/|$HOME/|g; s|sabon_vendo_cashier|sabon-vendo-cashier|g" CONFIG/config.env
-grep -nE '^TRANSACTION_DIR|_LOG *=|ARCHIVE_DIR|PRICES_FILE' CONFIG/config.env
-```
-
-Every path printed should start with your own home folder.
-
-Now edit it:
-
-```bash
+node kiosk_server/tools/hash_pin.js <4-digit PIN>     # once per staff member
 nano CONFIG/config.env
 ```
 
-Set at least these (save with `Ctrl+O`, `Enter`, exit with `Ctrl+X`):
+Set these (save with `Ctrl+O`, `Enter`, exit with `Ctrl+X`):
 
 | Key | Set it to |
 |-----|-----------|
-| `machineId` | This machine's number. **Must match the backend exactly, and be unique per Pi.** |
-| `vendorId` | The vendor UUID from the backend |
-| `API_BASE_URL` | The backend address, including the port it actually answers on |
-| `PRICE1`–`PRICE6` | Price per press, whole pesos |
-| `PRODUCT1_NAME`–`PRODUCT6_NAME` | What is in each tank |
-| `PRODUCT1_ML`–`PRODUCT6_ML` | Millilitres per press |
+| `machineId` | This machine's **number**. Must match the backend and be unique per Pi. |
+| `vendorId` | The vendor's **long code with dashes**. Not the number: swapping these two makes the backend refuse every sale. |
+| `API_BASE_URL` | The backend address, including the port it answers on |
+| `KIOSK_LETTER` | `A`, `B`, … — the order numbers start with it (`A-12`) |
+| `KIOSK_NAME`, `KIOSK_LOCATION` | Optional: what the staff page shows |
+| `STAFF1_NAME`, `STAFF1_PIN_HASH` … up to `STAFF6_…` | Each staff member's name and the line `hash_pin.js` printed |
+| `STAFF_TABLET` | `1` to take cash at the counter and mark it paid from the staff tablet; `0` to have staff type their PIN on the kiosk |
+| `QR_DEMO` | `0`. `1` is the pretend QR payment for demos only |
+| `PRODUCT1_NAME`–`PRODUCT6_NAME`, `PRODUCT1_ML`–`PRODUCT6_ML` | What is in each tank, and millilitres per press |
+| `PRICE1`–`PRICE6` | Price per press, whole pesos (also editable later from the staff page) |
 | `calibrateProduct1`–`6` | Leave for now — set in step 9 |
 
 Check the backend is reachable on that port (any number back means it is up;
-`Connection refused` means wrong port or the API is down):
+`Connection refused` means wrong port or the backend is down):
 
 ```bash
-curl -sS -m 5 -o /dev/null -w '%{http_code}\n' "$(sed -n 's/^API_BASE_URL *= *"\(.*\)"/\1/p' CONFIG/config.env)/api/v1/auth/machine/transaction"
+curl -sS -m 5 -o /dev/null -w '%{http_code}\n' "$(sed -n 's/^API_BASE_URL *= *"\{0,1\}\([^"]*\)"\{0,1\}/\1/p' CONFIG/config.env)/api/v1/auth/machine/transaction"
 ```
 
 ---
@@ -150,7 +146,7 @@ curl -sS -m 5 -o /dev/null -w '%{http_code}\n' "$(sed -n 's/^API_BASE_URL *= *"\
 Installs WiringPi, Node.js 20, PM2 and log rotation. Takes a while.
 
 ```bash
-cd ~/Desktop/sabon-vendo-cashier
+cd ~/Desktop/sabon-express-kiosk
 ./install_dependencies.sh 2>&1 | tee install_dependencies.log
 ```
 
@@ -161,57 +157,57 @@ If it stops on the Node.js version check, see
 
 ## 6. Build and launch
 
-Builds the controller, sets up Python, installs the dashboard, and registers
-all five processes to start on every boot.
+Builds the controller, sets up Python, registers the five processes to start
+on every boot, sets the touchscreen to open the kiosk at login, and ends with
+the install check.
 
 ```bash
-cd ~/Desktop/sabon-vendo-cashier
+cd ~/Desktop/sabon-express-kiosk
 ./setup_and_run.sh 2>&1 | tee setup_run.log
 ```
 
-Run the tests (a few minutes — the press tests wait for real pours):
+Run the controller tests too (a few minutes — the press tests wait for real
+pours). The last line must say `0 failed`:
 
 ```bash
-cd ~/Desktop/sabon-vendo-cashier/controller && make test; cd ..
+cd ~/Desktop/sabon-express-kiosk/controller && make test; cd ..
 ```
-
-The last line must say `0 failed`.
 
 ---
 
-## 7. Verify
+## 7. Check
 
 ```bash
-sudo pm2 list                                   # 5 processes, all online
-sudo ss -tlnp | grep -E ':80 |:8080 '          # :8080 = main, :80 = node
-sudo pm2 logs 01_Dispenser_Controller --lines 80 --nostream | grep -E "Slot [1-6]: BTN=|Buttons|reading LOW|Button hold|Water sensor"
-hostname -I                                     # the Pi's address
+cd ~/Desktop/sabon-express-kiosk
+./check_install.sh
 ```
 
-In the controller lines, look for `Buttons: all 6 resting HIGH`.
-If it says `reading LOW`, the named buttons are wired wrong or pulled down by
-something — fix that before going on.
+Every line must be ✓ and the last line `All good`. Each ✗ says how to fix it
+on the line under it; fix, then run the check again. Then reboot once and run
+it again — the kiosk must come back by itself:
 
-Open the dashboard in a browser: `http://<pi-ip>/` (no port number).
+```bash
+sudo reboot
+# after logging back in:
+cd ~/Desktop/sabon-express-kiosk && ./check_install.sh
+```
+
+The touchscreen should show the kiosk, full screen, on its own.
 
 ---
 
 ## 8. Test the hardware
 
-### Buttons
+### Buttons (only if buttons are wired)
 
 ```bash
-cd ~/Desktop/sabon-vendo-cashier/controller/tools
+cd ~/Desktop/sabon-express-kiosk/controller/tools
 g++ -o test_buttons test_buttons.cpp -lwiringPi
 sudo ./test_buttons
 ```
 
 Press each button once. Every one must print `>>> PRESSED` then `<<< RELEASED`.
 `Ctrl+C` to quit.
-
-> `test_buttons` uses the default pins (14, 24, 25, 10, 13, 23). If you changed
-> any `BTNn` in `config.env`, check that pin with `watch -n 0.3 pinctrl get <gpio>`
-> instead — it must read `hi` at rest and `lo` while pressed.
 
 ### Relays
 
@@ -244,31 +240,54 @@ Follow [INSTALLATION.md section 7b](INSTALLATION.md#7b-calibrate-the-pumps).
 
 ---
 
-## Optional: cashier tablet as a kiosk
+## 10. Staff tablet
 
-See [KIOSK.md](KIOSK.md).
+With `STAFF_TABLET = 1`, staff mark cash paid from a tablet or laptop on the
+shop Wi-Fi. Find the Pi's address and open the page there:
+
+```bash
+hostname -I          # the first address
+```
+
+`http://<pi-ip>:3000/staff` — sign in with a staff PIN.
 
 ---
 
 ## Updating this Pi later
 
 ```bash
-cd ~/Desktop/sabon-vendo-cashier
-git pull
-./setup_and_run.sh 2>&1 | tee setup_run.log
+cd ~/Desktop/sabon-express-kiosk
+./update.sh
 ```
 
-If `git pull` says *local changes would be overwritten*, run `git status --short`,
-then `git checkout -- <that file>` for anything listed that you did not mean to
-change, and pull again. `config.env` is never touched by a pull.
+It pulls, rebuilds the controller only if its code changed, restarts
+everything and runs the check. If it says files *were changed on this Pi*,
+undo the ones you did not mean with `git checkout -- <file>` and run it again.
+`config.env` and `prices.conf` are never touched.
+
+---
+
+## This Pi ran V1 or the cashier before
+
+```bash
+sudo systemctl disable --now vendo_gui.service     # the old V1 screen, if present
+cd ~/Desktop/sabon-express-kiosk
+./setup_and_run.sh 2>&1 | tee setup_run.log        # re-points every process here
+./check_install.sh
+```
+
+Delete the old folder only when its `transaction/` folder is empty — anything
+in it is a sale the backend has not received yet.
 
 ---
 
 ## Quick reference
 
 ```bash
+./check_install.sh                             # is everything right?
+./update.sh                                    # update and check
 sudo pm2 list                                  # what is running
 sudo pm2 logs 01_Dispenser_Controller          # live controller log
+sudo pm2 logs 03_Transaction_Uploader          # are sales reaching the backend?
 sudo pm2 restart 01_Dispenser_Controller       # after editing config.env
-pinctrl get 10,13,14,23,24,25                  # button pins
 ```
