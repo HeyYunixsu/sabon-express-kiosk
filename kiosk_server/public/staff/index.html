@@ -5,6 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0B0E14">
   <title>Sabon Express · Staff</title>
+  <!-- Light or dark (Settings, Appearance; saved per device), set before the
+       first paint so the page never flashes the other one. -->
+  <script>try { if (localStorage.getItem('staff-theme') === 'light') document.documentElement.dataset.theme = 'light'; } catch (e) { /* no storage */ }</script>
   <link rel="stylesheet" href="/staff/staff.css">
 </head>
 <body>
@@ -39,6 +42,7 @@
     <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 3l10 18H2z"/><path d="M12 10v5M12 18h.01"/></symbol>
     <symbol id="i-bang" viewBox="0 0 24 24"><path d="M12 6.5v7M12 17.5h.01"/></symbol>
     <symbol id="i-dot" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4.5" fill="currentColor" stroke="none"/></symbol>
+    <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M4.6 4.6l1.4 1.4M18 18l1.4 1.4M2.5 12h2M19.5 12h2M4.6 19.4L6 18M18 6l1.4-1.4"/></symbol>
     <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5L18 18M18 6l-2.5 2.5M8.5 15.5L6 18"/></symbol>
   </svg>
 
@@ -272,6 +276,17 @@
 
       <!-- Settings -->
       <section id="v-settings" hidden>
+        <div class="d-row">
+          <div class="d-card span-12">
+            <div class="d-head">
+              <h2><svg class="i"><use href="#i-sun"/></svg>Appearance</h2>
+              <div class="d-switch" id="x-theme" role="group" aria-label="Appearance">
+                <button type="button" data-theme="dark">Dark</button><button type="button" data-theme="light">Light</button>
+              </div>
+            </div>
+            <p class="s-hint">Saved on this device only, so the tablet and a laptop can each have their own.</p>
+          </div>
+        </div>
         <div class="d-row">
           <div class="d-card span-6">
             <div class="d-head"><h2><svg class="i"><use href="#i-gear"/></svg>This machine</h2></div>
