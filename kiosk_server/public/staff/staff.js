@@ -196,6 +196,25 @@
     renderLogin('');
   });
 
+  // ---- appearance ---------------------------------------------------------------
+  // Light or dark, saved per device. The page's <head> applies the saved one
+  // before the first paint; this keeps the switch in step and saves a change.
+  function showTheme() {
+    const t = document.documentElement.dataset.theme === 'light' ? 'light' : 'dark';
+    for (const b of $('x-theme').querySelectorAll('button')) b.classList.toggle('on', b.dataset.theme === t);
+    // A tablet's browser bar takes this colour: match the page's canvas.
+    document.querySelector('meta[name="theme-color"]').content = t === 'light' ? '#F2F4F8' : '#0B0E14';
+  }
+  $('x-theme').addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-theme]');
+    if (!b) return;
+    if (b.dataset.theme === 'light') document.documentElement.dataset.theme = 'light';
+    else delete document.documentElement.dataset.theme;
+    try { localStorage.setItem('staff-theme', b.dataset.theme); } catch (_) { /* no storage */ }
+    showTheme();
+  });
+  showTheme();
+
   // ---- sections -----------------------------------------------------------------
   // Overview reads /staff/api/state only; the other sections also poll the
   // tools every 3 s while open.

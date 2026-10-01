@@ -16,7 +16,23 @@
   --r: 16px; --gap: 24px; --pad: 24px;
   --ease: cubic-bezier(.2,.8,.2,1);
   font-family: 'Helvetica Neue LT', system-ui, sans-serif;
+  color-scheme: dark;
 }
+/* Light mode (Settings, Appearance; saved per device): the same 60-30-10 on
+   white. The signal colours go darker so a green or amber word still reads
+   on white. */
+:root[data-theme="light"] {
+  --bg: #F2F4F8;
+  --surface: #FFFFFF; --surface-sub: #F4F6FA;
+  --line: #E1E6EE; --line-2: #CBD3DF;
+  --ink: #111827; --ink-2: #5B6475;
+  --brand: #2F5FE0; --brand-text: #2F5FE0;
+  --green: #059669; --amber: #B45309; --red: #DC2626;
+  color-scheme: light;
+}
+:root[data-theme="light"] .s-dialog { background: rgba(17,24,39,.35); }
+:root[data-theme="light"] .s-dialog .d-card,
+:root[data-theme="light"] .n-card { box-shadow: 0 12px 32px rgba(17,24,39,.14); }
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
 html { background: var(--bg); }
