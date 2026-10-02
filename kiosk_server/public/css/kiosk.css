@@ -459,6 +459,10 @@ button:disabled { cursor: default; }
 .o-cash-amt b { color: var(--ink); }
 .o-side.is-receipt { background: none; border: 0; padding: 0; justify-content: center; }
 .o-receipt .rcpt { font-size: 19px; width: 20em; }
+/* 4+ items (up to all 6) run long enough to crowd the waiting bar below at
+   19px; one size down clears it with room to spare (measured: 24px gap vs.
+   10px at 19px, for all 6 products). */
+.o-receipt.is-long .rcpt { font-size: 18px; }
 .o-wait { margin-top: 22px; }
 .o-wait-text { font-size: 26px; font-weight: 700; margin-bottom: 10px; font-variant-numeric: tabular-nums; }
 .o-bar { height: 14px; border-radius: var(--r-pill); background: var(--surface-sub); overflow: hidden; }

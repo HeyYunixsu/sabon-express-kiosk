@@ -466,7 +466,7 @@ li.is-bad .s-word i { background: var(--red); }
 
 /* Hold to accept: the green fill grows while held (HOLD_MS in staff.js);
    letting go early empties it. */
-.s-hold { position: relative; overflow: hidden; color: var(--ink); border-color: var(--green); background: transparent; touch-action: none; user-select: none; -webkit-user-select: none; }
+.s-hold { position: relative; overflow: hidden; color: var(--ink); border-color: var(--green); background: transparent; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
 .s-hold::before { content: ''; position: absolute; inset: 0; width: 0; background: var(--green); opacity: .85; transition: width .15s ease; }
 .s-hold.is-holding::before { width: 100%; transition: width 1s linear; }
 .s-hold > span { position: relative; }

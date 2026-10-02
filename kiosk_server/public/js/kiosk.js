@@ -386,6 +386,9 @@
     $('o-order').hidden = cash;
     $('o-cash').hidden = !cash;
     $('o-receipt').hidden = !cash;
+    // A full order (6 products) runs the receipt into the waiting bar below
+    // at the normal size -- is-long shrinks it just enough to clear it.
+    $('o-receipt').classList.toggle('is-long', o.items.length > 3);
     $('o-side').classList.toggle('is-receipt', cash);
     $('o-number').parentElement.hidden = cash;   // the whole "Order A-12" line
     $('o-cash-num').textContent = o.number;

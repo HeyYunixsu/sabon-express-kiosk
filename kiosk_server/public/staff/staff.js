@@ -45,6 +45,10 @@
   let netNote = null;           // the sticky Wi-Fi notification, while the poll fails
   let dlgTimer = null;
   let payPopFor = null;   // the order the pop-up's receipt was drawn for
+  // The order a hold/cancel just closed locally: a state that still names it
+  // pending is stale (in flight when we closed it) and must not re-show the
+  // pop-up or re-chime. Cleared once a state arrives that agrees it is gone.
+  let closedOrder = null;
   const lastHtml = {};
 
   async function api(path, body) {
@@ -136,7 +140,12 @@
       // The order the hold is for is fixed at the press, not re-read when the
       // timer fires: a hold that outlasts the order it started on (it expired
       // and a different one took its place mid-hold) must not pay the new one.
-      timer = setTimeout(() => { const t = target; stop(); onDone(t); }, HOLD_MS);
+      timer = setTimeout(() => {
+        const t = target;
+        stop();
+        if (btn.disabled) return;   // went offline/busy mid-hold: don't fire
+        onDone(t);
+      }, HOLD_MS);
     };
     btn.addEventListener('pointerdown', start);
     btn.addEventListener('keydown', start);
@@ -296,6 +305,10 @@
     if (r.code === 200) {
       // Back in touch: take down the Wi-Fi notification.
       if (netDown) { netDown = false; netNote.close(); netNote = null; }
+      // A state that still names the order we just accepted/cancelled was
+      // already in flight when that happened -- treat it as already gone.
+      if (closedOrder && r.body.pending && r.body.pending.number === closedOrder) r.body.pending = null;
+      else closedOrder = null;
       state = r.body; stateAt = Date.now(); render();
     } else if (r.code === 0) {
       // One sticky notification for the whole drop, not one per failed poll.
@@ -452,6 +465,9 @@
     $('pp-hold').querySelector('span').textContent = `Hold · Cash received ${peso(o.amount)}`;
     $('pp-hold').disabled = busy || state.machine === 'offline';
     $('pp-cancel').disabled = busy;
+    $('pp-hint').textContent = state.machine === 'offline'
+      ? (PAID_MSG.offline || 'The kiosk is offline — do not take payment yet.')
+      : 'Hold until it fills';
   }
 
   // ---- stat cards ---------------------------------------------------------------
@@ -657,6 +673,7 @@
     const r = await api('/staff/api/orders/paid', { number: o.number });
     busy = false;
     if (r.code === 200) {
+      closedOrder = o.number;
       state.pending = null;
       if (!$('dlg').hidden) { closeDialog(); dialogAction = null; }
       notify({ kind: 'ok', title: `${o.number} paid`, sub: 'The kiosk is unlocked.' });
@@ -676,6 +693,7 @@
       const r = await api('/staff/api/orders/cancel', { number: o.number });
       busy = false;
       if (r.code === 200) {
+        closedOrder = o.number;
         state.pending = null;
         notify({ kind: 'ok', title: `${o.number} cancelled` });
       } else notify({ kind: 'bad', title: `${o.number} not cancelled`, sub: PAID_MSG[r.body.error] || 'That did not work — try again.' });
