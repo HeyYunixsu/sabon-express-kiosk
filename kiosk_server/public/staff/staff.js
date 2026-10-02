@@ -6,8 +6,8 @@
 
 (() => {
   const $ = (id) => document.getElementById(id);
-  const peso = (n) => '₱' + n;
-  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  // Shared with the kiosk screen and the receipt itself (receipt.js loads first).
+  const { peso, esc } = window.Receipt;
   const icon = (name) => `<svg class="i"><use href="#i-${name}"/></svg>`;
   const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   const VIEWS = ['overview', 'transactions', 'health', 'inventory', 'settings'];
@@ -44,6 +44,11 @@
   let toolsGen = 0;
   let netNote = null;           // the sticky Wi-Fi notification, while the poll fails
   let dlgTimer = null;
+  let payPopFor = null;   // the order the pop-up's receipt was drawn for
+  // The order a hold/cancel just closed locally: a state that still names it
+  // pending is stale (in flight when we closed it) and must not re-show the
+  // pop-up or re-chime. Cleared once a state arrives that agrees it is gone.
+  let closedOrder = null;
   const lastHtml = {};
 
   async function api(path, body) {
@@ -114,16 +119,53 @@
     return handle;
   }
 
+  // A hold-to-confirm button: the fill grows while held; letting go early
+  // empties it and does nothing, and a plain click does nothing. Held for
+  // HOLD_MS (pointer, or Space / Enter) it runs onDone: accepting cash is one
+  // deliberate press, no dialog.
+  const HOLD_MS = 1000;
+  function holdButton(btn, onDone) {
+    let timer = null;
+    let target = null;   // the order waiting when the hold started
+    const stop = () => { clearTimeout(timer); timer = null; target = null; btn.classList.remove('is-holding'); };
+    const start = (e) => {
+      if (e.type === 'pointerdown' && (e.button !== 0 || !e.isPrimary)) return;
+      if (btn.disabled || timer) return;
+      if (e.type === 'keydown') {
+        if ((e.key !== ' ' && e.key !== 'Enter') || e.repeat) return;
+        e.preventDefault();
+      }
+      target = state && state.pending && state.pending.number;
+      btn.classList.add('is-holding');
+      // The order the hold is for is fixed at the press, not re-read when the
+      // timer fires: a hold that outlasts the order it started on (it expired
+      // and a different one took its place mid-hold) must not pay the new one.
+      timer = setTimeout(() => {
+        const t = target;
+        stop();
+        if (btn.disabled) return;   // went offline/busy mid-hold: don't fire
+        onDone(t);
+      }, HOLD_MS);
+    };
+    btn.addEventListener('pointerdown', start);
+    btn.addEventListener('keydown', start);
+    for (const ev of ['pointerup', 'pointerleave', 'pointercancel', 'blur']) btn.addEventListener(ev, stop);
+    btn.addEventListener('keyup', (e) => { if (e.key === ' ' || e.key === 'Enter') stop(); });
+    btn.addEventListener('click', (e) => e.preventDefault());
+    btn.addEventListener('contextmenu', (e) => e.preventDefault());   // touch long-press menu
+  }
+
   // Signed out: the sign-in card. Signed in: the dashboard.
   function showScreen(v) {
     $('v-login').hidden = v !== 'login';
     $('app').hidden = v !== 'main';
-    if (v === 'main') showView(view);
+    if (v === 'main') { $('app').inert = false; showView(view); }
     else {
       clearTimeout(toolsTimer); clearTimeout(weekTimer);
       // Signed out (by hand or a 401): nothing from the last session stays up.
       for (const n of [...notices]) n.close();
       netDown = false; netNote = null;
+      $('pay-pop').hidden = true; payPopFor = null;
     }
   }
 
@@ -263,6 +305,10 @@
     if (r.code === 200) {
       // Back in touch: take down the Wi-Fi notification.
       if (netDown) { netDown = false; netNote.close(); netNote = null; }
+      // A state that still names the order we just accepted/cancelled was
+      // already in flight when that happened -- treat it as already gone.
+      if (closedOrder && r.body.pending && r.body.pending.number === closedOrder) r.body.pending = null;
+      else closedOrder = null;
       state = r.body; stateAt = Date.now(); render();
     } else if (r.code === 0) {
       // One sticky notification for the whole drop, not one per failed poll.
@@ -303,6 +349,7 @@
     $('k-loc').querySelector('span').textContent = state.kiosk.location;
 
     renderHero();
+    renderPayPop();
     renderKpis();
     renderStatus();
     renderOrders();
@@ -312,15 +359,27 @@
     $('q-credits').textContent = state.waitingCredits;
   }
 
+  // Time left on the waiting order, for the hero and the pop-up.
+  function timeLeft(o) {
+    const left = Math.max(0, o.remainingMs - (Date.now() - stateAt));
+    const s = Math.ceil(left / 1000);
+    return {
+      text: `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')} left to pay`,
+      pct: o.totalMs ? Math.min(100, (left / o.totalMs) * 100) : 0,
+      low: left < 30000,
+    };
+  }
+
   function renderHero() {
     const o = state.pending;
     if (o && seenFirstState && o.number !== lastPending) {
       chime();
-      notify({
-        kind: 'info', title: `New order ${o.number} · ${peso(o.amount)}`,
-        sub: o.method === 'qr' ? 'Waiting for QR payment' : 'Waiting for payment',
-        onClick: () => { showView('overview'); window.scrollTo({ top: 0, behavior: 'smooth' }); },
-      });
+      if (o.method === 'qr') {
+        notify({
+          kind: 'info', title: `New order ${o.number} · ${peso(o.amount)}`, sub: 'Waiting for QR payment',
+          onClick: () => { showView('overview'); window.scrollTo({ top: 0, behavior: 'smooth' }); },
+        });
+      }
     }
     seenFirstState = true;
     lastPending = o ? o.number : null;
@@ -343,14 +402,12 @@
         <img src="${esc(i.img)}" alt=""><b>${esc(i.name)}</b><span class="q">× ${i.qty}</span><span class="p">${peso(i.price * i.qty)}</span>
       </li>`).join(''));
       $('w-total').textContent = peso(o.amount);
-      const left = Math.max(0, o.remainingMs - (Date.now() - stateAt));
-      const s = Math.ceil(left / 1000);
-      const t = $('w-timer');
-      t.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')} left to pay`;
-      t.classList.toggle('is-low', left < 30000);
-      $('w-bar').style.width = `${o.totalMs ? Math.min(100, (left / o.totalMs) * 100) : 0}%`;
-      $('w-bar').classList.toggle('is-low', left < 30000);
-      $('w-paid').textContent = `Mark as paid · ${peso(o.amount)}`;
+      const tl = timeLeft(o);
+      $('w-timer').textContent = tl.text;
+      $('w-timer').classList.toggle('is-low', tl.low);
+      $('w-bar').style.width = `${tl.pct}%`;
+      $('w-bar').classList.toggle('is-low', tl.low);
+      $('w-paid').querySelector('span').textContent = `Hold · Cash received ${peso(o.amount)}`;
       $('w-paid').disabled = busy || state.machine === 'offline';
       $('w-cancel').disabled = busy;
     } else {
@@ -382,6 +439,35 @@
       $('w-msg').className = 's-msg';
       $('w-msg').textContent = focusNote;
     }
+  }
+
+  // The cash-order pop-up: shown over every section while a cash order waits
+  // and someone is signed in; gone once it is paid, cancelled or expired.
+  function renderPayPop() {
+    const o = state && state.pending;
+    const show = !!o && o.method !== 'qr' && !$('app').hidden;
+    $('pay-pop').hidden = !show;
+    // The pop-up fully covers the dashboard; make it inert so Tab/Space can't
+    // reach the hero's own Hold button (or anything else) hidden underneath.
+    $('app').inert = show;
+    if (!show) { payPopFor = null; return; }
+    if (payPopFor !== o.number) {
+      payPopFor = o.number;
+      $('pp-receipt').innerHTML = Receipt.html(o, state.kiosk.name);
+      $('pp-hold').focus({ preventScroll: true });
+    }
+    $('pp-amt').textContent = peso(o.amount);
+    const tl = timeLeft(o);
+    $('pp-timer').textContent = tl.text;
+    $('pp-timer').classList.toggle('is-low', tl.low);
+    $('pp-bar').style.width = `${tl.pct}%`;
+    $('pp-bar').classList.toggle('is-low', tl.low);
+    $('pp-hold').querySelector('span').textContent = `Hold · Cash received ${peso(o.amount)}`;
+    $('pp-hold').disabled = busy || state.machine === 'offline';
+    $('pp-cancel').disabled = busy;
+    $('pp-hint').textContent = state.machine === 'offline'
+      ? (PAID_MSG.offline || 'The kiosk is offline — do not take payment yet.')
+      : 'Hold until it fills';
   }
 
   // ---- stat cards ---------------------------------------------------------------
@@ -577,33 +663,45 @@
     qr_order: 'This order is paid by QR on the customer\'s phone.',
   };
 
-  $('w-paid').addEventListener('click', () => {
+  // Cash received: the hold on the hero or the pop-up. Marked paid exactly
+  // as before (logged with the staff name); no extra dialog.
+  async function acceptCash(expected) {
     const o = state && state.pending;
-    if (!o) return;
-    ask(`Did you receive ${peso(o.amount)} cash?`, `Order ${o.number}`, 'Yes, received', async () => {
-      busy = true; render();
-      const r = await api('/staff/api/orders/paid', { number: o.number });
-      busy = false;
-      if (r.code === 200) notify({ kind: 'ok', title: `${o.number} paid`, sub: 'The kiosk is unlocked.' });
-      else notify({ kind: 'bad', title: `${o.number} not marked paid`, sub: PAID_MSG[r.body.error] || 'That did not work — try again.' });
-      focus = null; focusNote = '';
-      $('w-msg').textContent = '';
-      render();
-    });
-  });
+    if (!o || busy) return;
+    if (expected !== undefined && o.number !== expected) return;   // order changed mid-hold
+    busy = true; render();
+    const r = await api('/staff/api/orders/paid', { number: o.number });
+    busy = false;
+    if (r.code === 200) {
+      closedOrder = o.number;
+      state.pending = null;
+      if (!$('dlg').hidden) { closeDialog(); dialogAction = null; }
+      notify({ kind: 'ok', title: `${o.number} paid`, sub: 'The kiosk is unlocked.' });
+    } else notify({ kind: 'bad', title: `${o.number} not marked paid`, sub: PAID_MSG[r.body.error] || 'That did not work — try again.' });
+    focus = null; focusNote = '';
+    $('w-msg').textContent = '';
+    render();
+  }
+  holdButton($('w-paid'), acceptCash);
+  holdButton($('pp-hold'), acceptCash);
 
-  $('w-cancel').addEventListener('click', () => {
+  function cancelOrder() {
     const o = state && state.pending;
     if (!o) return;
     ask(`Cancel order ${o.number}?`, 'The kiosk goes back to the start screen.', 'Yes, cancel', async () => {
       busy = true; render();
       const r = await api('/staff/api/orders/cancel', { number: o.number });
       busy = false;
-      if (r.code === 200) notify({ kind: 'ok', title: `${o.number} cancelled` });
-      else notify({ kind: 'bad', title: `${o.number} not cancelled`, sub: PAID_MSG[r.body.error] || 'That did not work — try again.' });
+      if (r.code === 200) {
+        closedOrder = o.number;
+        state.pending = null;
+        notify({ kind: 'ok', title: `${o.number} cancelled` });
+      } else notify({ kind: 'bad', title: `${o.number} not cancelled`, sub: PAID_MSG[r.body.error] || 'That did not work — try again.' });
       render();
     });
-  });
+  }
+  $('w-cancel').addEventListener('click', cancelOrder);
+  $('pp-cancel').addEventListener('click', cancelOrder);
 
   // ---- tools --------------------------------------------------------------------
   const nameOf = (slot) => (tools && tools.products[slot - 1] ? tools.products[slot - 1].name : `Slot ${slot}`);

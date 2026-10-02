@@ -48,6 +48,7 @@ test('creating an order', async (t) => {
     assert.deepStrictEqual(arms(stub), []);
     const s = await k.get('/api/state');
     assert.strictEqual(s.body.pending.number, 'A-1');
+    assert.strictEqual(s.body.kioskName, 'Kiosk A');
   });
 
   await t.test('a second order is refused while one waits', async () => {
