@@ -23,7 +23,7 @@
   const MAX_QTY = 20;
 
   const $ = (id) => document.getElementById(id);
-  const peso = (n) => '₱' + n;
+  const { peso } = window.Receipt;   // shared with the staff page and the receipt itself
   const MINUS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M5 12h14"/></svg>';
   const PLUS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>';
 

@@ -39,5 +39,7 @@
     </div>`;
   }
 
-  window.Receipt = { html, when };
+  // esc/peso are shared too: kiosk.js and staff.js reuse these instead of
+  // keeping their own copies (receipt.js loads first on both pages).
+  window.Receipt = { html, when, esc, peso };
 })();

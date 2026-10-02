@@ -6,8 +6,8 @@
 
 (() => {
   const $ = (id) => document.getElementById(id);
-  const peso = (n) => '₱' + n;
-  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  // Shared with the kiosk screen and the receipt itself (receipt.js loads first).
+  const { peso, esc } = window.Receipt;
   const icon = (name) => `<svg class="i"><use href="#i-${name}"/></svg>`;
   const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   const VIEWS = ['overview', 'transactions', 'health', 'inventory', 'settings'];
@@ -122,7 +122,8 @@
   const HOLD_MS = 1000;
   function holdButton(btn, onDone) {
     let timer = null;
-    const stop = () => { clearTimeout(timer); timer = null; btn.classList.remove('is-holding'); };
+    let target = null;   // the order waiting when the hold started
+    const stop = () => { clearTimeout(timer); timer = null; target = null; btn.classList.remove('is-holding'); };
     const start = (e) => {
       if (e.type === 'pointerdown' && (e.button !== 0 || !e.isPrimary)) return;
       if (btn.disabled || timer) return;
@@ -130,8 +131,12 @@
         if ((e.key !== ' ' && e.key !== 'Enter') || e.repeat) return;
         e.preventDefault();
       }
+      target = state && state.pending && state.pending.number;
       btn.classList.add('is-holding');
-      timer = setTimeout(() => { stop(); onDone(); }, HOLD_MS);
+      // The order the hold is for is fixed at the press, not re-read when the
+      // timer fires: a hold that outlasts the order it started on (it expired
+      // and a different one took its place mid-hold) must not pay the new one.
+      timer = setTimeout(() => { const t = target; stop(); onDone(t); }, HOLD_MS);
     };
     btn.addEventListener('pointerdown', start);
     btn.addEventListener('keydown', start);
@@ -145,7 +150,7 @@
   function showScreen(v) {
     $('v-login').hidden = v !== 'login';
     $('app').hidden = v !== 'main';
-    if (v === 'main') showView(view);
+    if (v === 'main') { $('app').inert = false; showView(view); }
     else {
       clearTimeout(toolsTimer); clearTimeout(weekTimer);
       // Signed out (by hand or a 401): nothing from the last session stays up.
@@ -429,6 +434,9 @@
     const o = state && state.pending;
     const show = !!o && o.method !== 'qr' && !$('app').hidden;
     $('pay-pop').hidden = !show;
+    // The pop-up fully covers the dashboard; make it inert so Tab/Space can't
+    // reach the hero's own Hold button (or anything else) hidden underneath.
+    $('app').inert = show;
     if (!show) { payPopFor = null; return; }
     if (payPopFor !== o.number) {
       payPopFor = o.number;
@@ -641,9 +649,10 @@
 
   // Cash received: the hold on the hero or the pop-up. Marked paid exactly
   // as before (logged with the staff name); no extra dialog.
-  async function acceptCash() {
+  async function acceptCash(expected) {
     const o = state && state.pending;
     if (!o || busy) return;
+    if (expected !== undefined && o.number !== expected) return;   // order changed mid-hold
     busy = true; render();
     const r = await api('/staff/api/orders/paid', { number: o.number });
     busy = false;
