@@ -124,6 +124,7 @@
     let timer = null;
     const stop = () => { clearTimeout(timer); timer = null; btn.classList.remove('is-holding'); };
     const start = (e) => {
+      if (e.type === 'pointerdown' && (e.button !== 0 || !e.isPrimary)) return;
       if (btn.disabled || timer) return;
       if (e.type === 'keydown') {
         if ((e.key !== ' ' && e.key !== 'Enter') || e.repeat) return;
@@ -432,6 +433,7 @@
     if (payPopFor !== o.number) {
       payPopFor = o.number;
       $('pp-receipt').innerHTML = Receipt.html(o, state.kiosk.name);
+      $('pp-hold').focus({ preventScroll: true });
     }
     $('pp-amt').textContent = peso(o.amount);
     const tl = timeLeft(o);
@@ -645,8 +647,11 @@
     busy = true; render();
     const r = await api('/staff/api/orders/paid', { number: o.number });
     busy = false;
-    if (r.code === 200) notify({ kind: 'ok', title: `${o.number} paid`, sub: 'The kiosk is unlocked.' });
-    else notify({ kind: 'bad', title: `${o.number} not marked paid`, sub: PAID_MSG[r.body.error] || 'That did not work — try again.' });
+    if (r.code === 200) {
+      state.pending = null;
+      if (!$('dlg').hidden) { closeDialog(); dialogAction = null; }
+      notify({ kind: 'ok', title: `${o.number} paid`, sub: 'The kiosk is unlocked.' });
+    } else notify({ kind: 'bad', title: `${o.number} not marked paid`, sub: PAID_MSG[r.body.error] || 'That did not work — try again.' });
     focus = null; focusNote = '';
     $('w-msg').textContent = '';
     render();
@@ -661,8 +666,10 @@
       busy = true; render();
       const r = await api('/staff/api/orders/cancel', { number: o.number });
       busy = false;
-      if (r.code === 200) notify({ kind: 'ok', title: `${o.number} cancelled` });
-      else notify({ kind: 'bad', title: `${o.number} not cancelled`, sub: PAID_MSG[r.body.error] || 'That did not work — try again.' });
+      if (r.code === 200) {
+        state.pending = null;
+        notify({ kind: 'ok', title: `${o.number} cancelled` });
+      } else notify({ kind: 'bad', title: `${o.number} not cancelled`, sub: PAID_MSG[r.body.error] || 'That did not work — try again.' });
       render();
     });
   }
