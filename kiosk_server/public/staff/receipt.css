@@ -1,0 +1,22 @@
+/* The order receipt (receipt.js): thermal paper, the same on the kiosk and
+   the staff page. Set the size with font-size on .rcpt; all else is in em. */
+.rcpt {
+  position: relative; width: 22em; max-width: 100%; padding: 1.2em 1.2em 2em;
+  background: #FCFCF9; color: #111; font-family: 'Courier New', Courier, monospace;
+  font-size: 13px; line-height: 1.4; text-align: left;
+  box-shadow: 0 .8em 2.4em rgba(0,0,0,.45);
+}
+/* The torn edge: a zigzag of the paper colour below the bottom. */
+.rcpt::after {
+  content: ''; position: absolute; left: 0; right: 0; bottom: -.75em; height: .75em;
+  background:
+    linear-gradient(-45deg, transparent .38em, #FCFCF9 .38em) 0 0 / .75em .75em,
+    linear-gradient(45deg, transparent .38em, #FCFCF9 .38em) 0 0 / .75em .75em;
+}
+.rc-c { text-align: center; }
+.rc-big { font-size: 1.7em; font-weight: 700; letter-spacing: .05em; }
+.rc-hr { border-top: 1px dashed #555; margin: .7em 0; }
+.rc-row { display: flex; justify-content: space-between; gap: 1em; }
+.rc-row > :first-child { min-width: 0; overflow-wrap: anywhere; }
+.rc-row > :last-child { flex: none; white-space: nowrap; }
+.rc-tot { font-size: 1.25em; font-weight: 700; }

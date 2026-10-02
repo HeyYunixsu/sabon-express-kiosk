@@ -832,7 +832,7 @@ function createKioskServer({
     if (url === '/staff' || url.startsWith('/staff/')) return staffRoutes(req, res, url);
     if (req.method === 'GET' && url === '/api/state') {
       return json(res, 200, {
-        products, idleSeconds, cashReady: staff.length > 0, staffTablet, qrDemo, ...snapshot(),
+        products, idleSeconds, cashReady: staff.length > 0, staffTablet, qrDemo, kioskName, ...snapshot(),
       });
     }
     if (req.method === 'GET' && url === '/api/stream') return stream(req, res);
