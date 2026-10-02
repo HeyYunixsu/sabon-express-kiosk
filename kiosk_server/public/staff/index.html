@@ -9,6 +9,7 @@
        first paint so the page never flashes the other one. -->
   <script>try { if (localStorage.getItem('staff-theme') === 'light') document.documentElement.dataset.theme = 'light'; } catch (e) { /* no storage */ }</script>
   <link rel="stylesheet" href="/staff/staff.css">
+  <link rel="stylesheet" href="/staff/receipt.css">
 </head>
 <body>
   <!-- Icons, drawn once and used by <use href="#i-…"> here and in staff.js -->
@@ -154,7 +155,7 @@
                 <div class="w-total"><span>Total</span><b id="w-total"></b></div>
                 <div class="w-timer" id="w-timer"></div>
                 <div class="w-bar"><i id="w-bar"></i></div>
-                <button class="s-btn s-primary s-big" id="w-paid" type="button">Mark as paid</button>
+                <button class="s-btn s-hold s-big" id="w-paid" type="button"><span>Hold · Cash received</span></button>
                 <button class="s-btn s-danger-ghost" id="w-cancel" type="button">Cancel order</button>
               </div>
             </div>
@@ -301,6 +302,24 @@
     </main>
   </div>
 
+  <!-- A cash order waiting at the counter: over every section until it is
+       paid, cancelled or expired (staff.js renderPayPop). Under the
+       notifications and the confirm dialog. -->
+  <div class="p-pop" id="pay-pop" hidden>
+    <div class="d-card p-card" role="dialog" aria-modal="true" aria-label="Cash order">
+      <div class="p-receipt" id="pp-receipt"></div>
+      <div class="p-side">
+        <p class="h-kicker">NEW CASH ORDER</p>
+        <b class="p-amt" id="pp-amt"></b>
+        <div class="w-timer" id="pp-timer"></div>
+        <div class="w-bar"><i id="pp-bar"></i></div>
+        <button class="s-btn s-hold s-big" id="pp-hold" type="button"><span></span></button>
+        <p class="p-hint">Hold until it fills</p>
+        <button class="s-btn s-danger-ghost" id="pp-cancel" type="button">Cancel order</button>
+      </div>
+    </div>
+  </div>
+
   <!-- One confirm dialog, reused for paid, cancel and every tool -->
   <div class="s-dialog" id="dlg" hidden>
     <div class="d-card">
@@ -317,6 +336,7 @@
   <div class="n-stack" id="x-msg" role="status" aria-live="polite" aria-atomic="false"></div>
 
   <script src="/staff/time.js"></script>
+  <script src="/staff/receipt.js"></script>
   <script src="/staff/staff.js"></script>
 </body>
 </html>
