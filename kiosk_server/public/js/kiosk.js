@@ -387,7 +387,7 @@
     $('o-cash').hidden = !cash;
     $('o-receipt').hidden = !cash;
     $('o-side').classList.toggle('is-receipt', cash);
-    $('o-number').hidden = cash;
+    $('o-number').parentElement.hidden = cash;   // the whole "Order A-12" line
     $('o-cash-num').textContent = o.number;
     $('o-cash-amt').textContent = peso(o.amount);
     const qrKey = `${o.method}:${o.number}`;
