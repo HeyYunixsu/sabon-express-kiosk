@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
   <title>Sabon Express</title>
   <link rel="stylesheet" href="css/kiosk.css">
+  <!-- The order receipt, shared with the staff page (served under /staff/) -->
+  <link rel="stylesheet" href="/staff/receipt.css">
 </head>
 <body>
 <!-- One 1920x1080 landscape stage, scaled to fit the window. On the kiosk's
@@ -117,16 +119,23 @@
         </div>
       </div>
       <div class="o-layout" id="o-live">
-        <div class="o-order">
+        <div class="o-order" id="o-order">
           <ul class="v2-cart-list o-items" id="o-items"></ul>
           <div class="v2-totals">
             <div class="v2-total-row"><span>Total to pay</span><span class="v2-total-v v2-total-money" id="o-total">₱0</span></div>
           </div>
         </div>
-        <div class="o-side">
+        <!-- Cash: the order number large; the receipt on the right carries the rest -->
+        <div class="o-cash" id="o-cash" hidden>
+          <span>Order</span>
+          <b id="o-cash-num">—</b>
+          <span class="o-cash-amt">Pay <b id="o-cash-amt">₱0</b> at the counter</span>
+        </div>
+        <div class="o-side" id="o-side">
           <div class="o-qr" id="o-qr"></div>
           <p class="o-hint" id="o-hint">Or show staff a photo of this code.</p>
           <div class="o-number">Order <b id="o-number">—</b></div>
+          <div class="o-receipt" id="o-receipt" hidden></div>
         </div>
       </div>
       <div class="o-wait" id="o-wait">
@@ -228,6 +237,7 @@
 
 </div>
 <script src="js/qrcode.js"></script>
+<script src="/staff/receipt.js"></script>
 <script src="js/kiosk.js"></script>
 </body>
 </html>

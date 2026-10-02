@@ -35,6 +35,7 @@
   let staffTablet = false;
   let qrDemo = false;
   let staffBase = null;
+  let kioskName = '';
   let idleSeconds = 60;
   let lastMsgAt = 0;
   let streamOpenedAt = 0;
@@ -369,7 +370,7 @@
     $('o-title').textContent = qr ? 'Scan to pay' : 'Pay at the counter';
     const lead = qr
       ? 'Scan the code with your phone camera and pay exactly <b class="k-amount" id="o-amount"></b>.'
-      : 'Go to the counter and pay exactly <b class="k-amount" id="o-amount"></b>. Staff will unlock the machine for you.';
+      : 'Pay exactly <b class="k-amount" id="o-amount"></b> to the cashier. The machine unlocks by itself once they accept it.';
     if ($('o-lead').dataset.kind !== (qr ? 'qr' : 'cash')) {
       $('o-lead').dataset.kind = qr ? 'qr' : 'cash';
       $('o-lead').innerHTML = lead;
@@ -379,18 +380,29 @@
     $('o-total').textContent = peso(o.amount);
     $('o-number').textContent = o.number;
     $('o-items').innerHTML = cartRows(o.items);
+    // Cash: no QR (one kiosk, one tablet: the order reaches the cashier by
+    // itself). The receipt on the right, the order number large on the left.
+    const cash = !qr;
+    $('o-order').hidden = cash;
+    $('o-cash').hidden = !cash;
+    $('o-receipt').hidden = !cash;
+    $('o-side').classList.toggle('is-receipt', cash);
+    $('o-number').hidden = cash;
+    $('o-cash-num').textContent = o.number;
+    $('o-cash-amt').textContent = peso(o.amount);
     const qrKey = `${o.method}:${o.number}`;
     if (qrFor !== qrKey) {
       qrFor = qrKey;
+      if (cash) $('o-receipt').innerHTML = Receipt.html(o, kioskName);
       const canQr = !!staffBase && typeof qrcode === 'function';
-      if (canQr) {
+      if (!cash && canQr) {
         const q = qrcode(0, 'M');
         q.addData(qr ? `${staffBase}/pay/${o.number}` : `${staffBase}/staff/order/${o.number}`);
         q.make();
         $('o-qr').innerHTML = q.createSvgTag({ cellSize: 4, margin: 0, scalable: true });
       }
-      $('o-qr').hidden = !canQr;
-      $('o-hint').hidden = !canQr;
+      $('o-qr').hidden = cash || !canQr;
+      $('o-hint').hidden = cash || !canQr;
       $('o-hint').textContent = qr ? 'Scan with your phone camera to pay.' : 'Or show staff a photo of this code.';
     }
     const left = Math.max(0, o.remainingMs - (Date.now() - pendingSeenAt));
@@ -719,6 +731,7 @@
       qrDemo = !!s.qrDemo;
       if (qrDemo) $('kpi-pay').textContent = 'Cash · QR';
       staffBase = s.staffBase || null;
+      kioskName = s.kioskName || '';
       buildGrid();
       show('attract');
       onState(s);
